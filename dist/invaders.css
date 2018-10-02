@@ -1,0 +1,29 @@
+.screen {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    align-content: center;
+
+    background-color: #0a1829;
+}
+
+.text {
+    color: white;
+}
+
+#canvas {
+    padding: 8px;
+    border: 1px solid black;
+    margin-top: 8px;
+}
+
+.status_div {
+    display: flex;
+    flex-direction: row;
+}
+
+.status_div h2 {
+    padding-right: 8px;
+    margin-bottom: 4px;
+}

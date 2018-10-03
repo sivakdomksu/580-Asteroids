@@ -18,9 +18,8 @@ var WIDTH = 800;
 var HEIGHT = 600;
 var ROTATION_SPEED = 0.2;
 var ACC_SPEED = 0.5;
-var ACC_VECTOR = vector_1.default.from(0, -ACC_SPEED);
 var DECELERATION_SPEED = 0.08;
-var MAX_SPEED = 20;
+var MAX_SPEED = 8;
 var DeathCauseEnum;
 (function (DeathCauseEnum) {
     DeathCauseEnum[DeathCauseEnum["OUT_OF_BOUNDS"] = 0] = "OUT_OF_BOUNDS";
@@ -39,6 +38,7 @@ var Boundary = /** @class */ (function () {
         this.maxY = maxY;
     }
     Boundary.prototype.isInBounds = function (x, y, shape) {
+        // return true;
         return x >= this.minX && y >= this.minY && (x + shape.getWidth()) <= this.maxX && (y + shape.getHeight()) <= this.maxY;
     };
     return Boundary;
@@ -135,14 +135,9 @@ var Move = /** @class */ (function () {
 }());
 var ConstantMove = /** @class */ (function (_super) {
     __extends(ConstantMove, _super);
-    function ConstantMove(vector, rotation) {
-        if (rotation === void 0) { rotation = 0; }
+    function ConstantMove(vector) {
         var _this = _super.call(this) || this;
         _this.vector = vector;
-        _this.rotation = rotation;
-        if (_this.rotation != 0) {
-            vector.rotate(_this.rotation);
-        }
         return _this;
     }
     ConstantMove.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
@@ -151,27 +146,29 @@ var ConstantMove = /** @class */ (function (_super) {
         if (moveVector === void 0) { moveVector = null; }
         return vector_1.default.from(this.vector.x * elapsedTime, this.vector.y * elapsedTime);
     };
+    ConstantMove.prototype.copy = function () {
+        return new ConstantMove(vector_1.default.fromOther(this.vector));
+    };
     ConstantMove.prototype.setRotation = function (rotation) {
-        this.rotation = rotation;
         this.vector.rotate(rotation);
+        return this;
     };
     return ConstantMove;
 }(Move));
 var DynamicMove = /** @class */ (function (_super) {
     __extends(DynamicMove, _super);
-    function DynamicMove(accVector, decSpeed) {
+    function DynamicMove(decSpeed) {
         var _this = _super.call(this) || this;
-        _this.accVector = accVector;
         _this.decSpeed = decSpeed;
         return _this;
     }
-    DynamicMove.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
-        var vector = vector_1.default.fromOther(moveVector).normalize().scale(-this.decSpeed);
-        if (speed != 0) {
-            vector.add(vector_1.default.fromOther(moveVector).add(vector).scale(-0.5));
-            vector.add(vector_1.default.fromOther(this.accVector).rotate(rotation)).normalize().scale(speed);
-        }
-        return vector;
+    DynamicMove.prototype.move = function (elapsedTime, rotation, speed) {
+        return null;
+    };
+    DynamicMove.prototype.copy = function () {
+        return new DynamicMove(this.decSpeed);
+    };
+    DynamicMove.prototype.setRotation = function (rotation) {
     };
     return DynamicMove;
 }(Move));
@@ -210,7 +207,7 @@ var BountyEnum = {
     }
 };
 var MoveTypeEnum = {
-    PLAYER: new DynamicMove(ACC_VECTOR, DECELERATION_SPEED),
+    PLAYER: new DynamicMove(DECELERATION_SPEED),
     ENEMY_SIMPLE: new ConstantMove(vector_1.default.from(0, 0.1)),
     PLAYER_SHOT: new ConstantMove(vector_1.default.from(0, -0.5)),
     ENEMY_SHOT: new ConstantMove(vector_1.default.from(0, 0.4)),
@@ -227,19 +224,22 @@ var EnvironmentTypeEnum = {
     CLOUD: new EnvironmentType(ShapeEnum.CLOUD, BoundaryEnum.CLOUD, MoveTypeEnum.CLOUD)
 };
 var GameObject = /** @class */ (function () {
-    function GameObject(id, type, x, y, onDestroyed) {
+    function GameObject(id, type, x, y, rot, onDestroyed) {
         this.id = id;
         this.type = type;
         this.x = x;
         this.y = y;
+        this.rot = rot;
         this.onDestroyed = onDestroyed;
         this.rotation = 0;
+        this.move = null;
         this.speed = 0;
+        this.move = type.move.copy().setRotation(rot);
     }
     GameObject.prototype.update = function (elapsedTime, rotation, movement) {
         if (rotation === void 0) { rotation = 0; }
         if (movement === void 0) { movement = false; }
-        var move = this.type.move.move(elapsedTime);
+        var move = this.move.move(elapsedTime);
         if (this.type.boundary.isInBounds(this.x + move.x, this.y + move.y, this.type.shape)) {
             this.x += move.x;
             this.y += move.y;
@@ -266,8 +266,8 @@ var GameObject = /** @class */ (function () {
 }());
 var Unit = /** @class */ (function (_super) {
     __extends(Unit, _super);
-    function Unit(id, type, x, y, onDestroyed) {
-        var _this = _super.call(this, id, type, x, y, onDestroyed) || this;
+    function Unit(id, type, x, y, rot, onDestroyed) {
+        var _this = _super.call(this, id, type, x, y, rot, onDestroyed) || this;
         _this.type = type;
         _this.moveVector = vector_1.default.zero();
         _this.onHit = function (other) {
@@ -321,8 +321,8 @@ var Unit = /** @class */ (function (_super) {
 }(GameObject));
 var Player = /** @class */ (function (_super) {
     __extends(Player, _super);
-    function Player(id, type, x, y, onDestroyed) {
-        var _this = _super.call(this, id, type, x, y, onDestroyed) || this;
+    function Player(id, type, x, y, rot, onDestroyed) {
+        var _this = _super.call(this, id, type, x, y, rot, onDestroyed) || this;
         _this.type = type;
         return _this;
     }
@@ -330,20 +330,17 @@ var Player = /** @class */ (function (_super) {
         if (rotation === void 0) { rotation = 0; }
         if (movement === void 0) { movement = false; }
         this.rotation = vector_1.mod(this.rotation + rotation * ROTATION_SPEED * elapsedTime, 360);
+        var oldSpeed = this.speed;
         this.speed = Math.max(0, this.speed - DECELERATION_SPEED);
-        console.log("Speed: ", this.speed);
+        this.moveVector.scale(oldSpeed === 0 ? 1 : this.speed / oldSpeed);
+        oldSpeed = this.speed;
         if (movement) {
             this.speed = Math.min(MAX_SPEED, this.speed + ACC_SPEED);
-            // this.moveVector.add(Vector.fromOther(this.moveVector).scale(-0.5));
-            this.moveVector.add(vector_1.default.fromOther(ACC_VECTOR).rotate(this.rotation)).normalize().scale(this.speed * elapsedTime / 100);
+            this.moveVector.add(vector_1.default.construct(this.speed - oldSpeed, this.rotation));
         }
         else if (this.speed === 0) {
             this.moveVector = vector_1.default.zero();
         }
-        else {
-            this.moveVector.add(vector_1.default.fromOther(this.moveVector).normalize().scale(-DECELERATION_SPEED * elapsedTime / 100));
-        }
-        // this.moveVector.add(this.type.move.move(elapsedTime, this.rotation, movement ? this.speed : 0, this.moveVector));
         this.x = vector_1.mod(this.x + this.moveVector.x, WIDTH);
         this.y = vector_1.mod(this.y + this.moveVector.y, HEIGHT);
     };
@@ -351,12 +348,10 @@ var Player = /** @class */ (function (_super) {
 }(Unit));
 var Shot = /** @class */ (function (_super) {
     __extends(Shot, _super);
-    function Shot(id, initiator, type, x, y, rotation, onDestroyed) {
-        if (rotation === void 0) { rotation = 0; }
-        var _this = _super.call(this, id, type, x, y, onDestroyed) || this;
+    function Shot(id, initiator, type, x, y, rot, onDestroyed) {
+        var _this = _super.call(this, id, type, x, y, rot, onDestroyed) || this;
         _this.initiator = initiator;
         _this.type = type;
-        _this.type.move = new ConstantMove(vector_1.default.fromOther(_this.type.move.vector), rotation);
         return _this;
     }
     Shot.prototype.isCollidingWith = function (other) {
@@ -366,8 +361,8 @@ var Shot = /** @class */ (function (_super) {
 }(GameObject));
 var Environment = /** @class */ (function (_super) {
     __extends(Environment, _super);
-    function Environment(id, type, x, y, onDestroyed) {
-        return _super.call(this, id, type, x, y, onDestroyed) || this;
+    function Environment(id, type, x, y, rot, onDestroyed) {
+        return _super.call(this, id, type, x, y, rot, onDestroyed) || this;
     }
     return Environment;
 }(GameObject));
@@ -393,7 +388,7 @@ var priorInput = {
     up: false,
     down: false
 };
-var player = new Player(0, UnitTypeEnum.PLAYER, 0, 0, function () {
+var player = new Player(0, UnitTypeEnum.PLAYER, 0, 0, 0, function () {
     endGame();
 });
 player.x = WIDTH / 2 - player.getWidth() / 2;
@@ -506,7 +501,7 @@ function createEnvironment() {
     switch (Math.floor(Math.random() * 100)) {
         case 1:
             var id = environmentIdCounter;
-            environments.set(id, new Environment(id, EnvironmentTypeEnum.CLOUD, Math.random() * WIDTH, -EnvironmentTypeEnum.CLOUD.shape.getHeight(), function (cause) {
+            environments.set(id, new Environment(id, EnvironmentTypeEnum.CLOUD, Math.random() * WIDTH, -EnvironmentTypeEnum.CLOUD.shape.getHeight(), 0, function (cause) {
                 environments.delete(this.id);
             }));
             environmentIdCounter++;

@@ -4,9 +4,8 @@ const WIDTH = 800;
 const HEIGHT = 600;
 const ROTATION_SPEED = 0.2;
 const ACC_SPEED = 0.5;
-const ACC_VECTOR = Vector.from(0, -ACC_SPEED);
 const DECELERATION_SPEED = 0.08;
-const MAX_SPEED = 20;
+const MAX_SPEED = 8;
 
 //region GameObject parts
 type BountyCallback = (enemy: Unit, shot: Shot, type: HitTypeEnum) => any;
@@ -25,7 +24,8 @@ class Boundary {
     constructor(public minX: number, public minY: number, public maxX: number, public maxY: number) {
     }
 
-    isInBounds(x: number, y: number, shape: Shape) {
+    isInBounds(x: number, y: number, shape: Shape): boolean {
+        // return true;
         return x >= this.minX && y >= this.minY && (x + shape.getWidth()) <= this.maxX && (y + shape.getHeight()) <= this.maxY;
     }
 }
@@ -107,39 +107,48 @@ abstract class Move {
     move(elapsedTime: number, rotation: number = 0, speed: number = 0, moveVector: Vector = null): Vector {
         throw new Error("Not Implemented!");
     }
+
+    abstract copy(): Move;
+
+    abstract setRotation(rotation: number);
 }
 
 class ConstantMove extends Move {
-    constructor(public vector: Vector, private rotation: number = 0) {
+    constructor(public vector: Vector) {
         super();
-        if (this.rotation != 0) {
-            vector.rotate(this.rotation);
-        }
     }
 
     move(elapsedTime: number, rotation: number = 0, speed: number = 0, moveVector: Vector = null): Vector {
         return Vector.from(this.vector.x * elapsedTime, this.vector.y * elapsedTime);
     }
 
+    public copy(): Move {
+        return new ConstantMove(Vector.fromOther(this.vector));
+    }
 
-    public setRotation(rotation: number) {
-        this.rotation = rotation;
+
+    public setRotation(rotation: number): Move {
         this.vector.rotate(rotation);
+        return this;
     }
 }
 
 class DynamicMove extends Move {
-    constructor(private accVector: Vector, private decSpeed: number) {
+    constructor(private decSpeed: number) {
         super();
     }
 
-    move(elapsedTime: number, rotation: number, speed: number, moveVector: Vector): Vector {
-        let vector = Vector.fromOther(moveVector).normalize().scale(-this.decSpeed);
-        if (speed != 0) {
-            vector.add(Vector.fromOther(moveVector).add(vector).scale(-0.5));
-            vector.add(Vector.fromOther(this.accVector).rotate(rotation)).normalize().scale(speed);
-        }
-        return vector;
+    move(elapsedTime: number, rotation: number, speed: number): Vector {
+
+        return null;
+    }
+
+
+    copy(): Move {
+        return new DynamicMove(this.decSpeed);
+    }
+
+    setRotation(rotation: number) {
     }
 }
 
@@ -181,7 +190,7 @@ const BountyEnum = {
 };
 
 const MoveTypeEnum = {
-    PLAYER: new DynamicMove(ACC_VECTOR, DECELERATION_SPEED),
+    PLAYER: new DynamicMove(DECELERATION_SPEED),
     ENEMY_SIMPLE: new ConstantMove(Vector.from(0, 0.1)),
     PLAYER_SHOT: new ConstantMove(Vector.from(0, -0.5)),
     ENEMY_SHOT: new ConstantMove(Vector.from(0, 0.4)),
@@ -209,14 +218,16 @@ type DestroyedCallback = (cause: DeathCauseEnum) => any;
 
 abstract class GameObject {
     public rotation: number = 0;
+    public move: Move = null;
 
     protected speed: number = 0;
 
-    protected constructor(public id: number, public type: GameObjectType, public x: number, public y: number, public onDestroyed: DestroyedCallback) {
+    protected constructor(public id: number, public type: GameObjectType, public x: number, public y: number, public rot: number, public onDestroyed: DestroyedCallback) {
+        this.move = type.move.copy().setRotation(rot);
     }
 
     update(elapsedTime: number, rotation: number = 0, movement: boolean = false) {
-        let move = this.type.move.move(elapsedTime);
+        let move = this.move.move(elapsedTime);
         if (this.type.boundary.isInBounds(this.x + move.x, this.y + move.y, this.type.shape)) {
             this.x += move.x;
             this.y += move.y;
@@ -267,8 +278,8 @@ class Unit extends GameObject {
     };
     public lives: number;
 
-    constructor(id: number, public type: UnitType, x: number, y: number, onDestroyed: DestroyedCallback) {
-        super(id, type, x, y, onDestroyed);
+    constructor(id: number, public type: UnitType, x: number, y: number, rot: number, onDestroyed: DestroyedCallback) {
+        super(id, type, x, y, rot, onDestroyed);
         this.lives = type.lives;
     }
 
@@ -303,25 +314,23 @@ class Unit extends GameObject {
 }
 
 class Player extends Unit {
-    constructor(id: number, public type: UnitType, x: number, y: number, onDestroyed: DestroyedCallback) {
-        super(id, type, x, y, onDestroyed);
+    constructor(id: number, public type: UnitType, x: number, y: number, rot: number, onDestroyed: DestroyedCallback) {
+        super(id, type, x, y, rot, onDestroyed);
     }
 
     update(elapsedTime: number, rotation: number = 0, movement: boolean = false): void {
         this.rotation = mod(this.rotation + rotation * ROTATION_SPEED * elapsedTime, 360);
+        let oldSpeed = this.speed;
         this.speed = Math.max(0, this.speed - DECELERATION_SPEED);
-        console.log("Speed: ", this.speed);
+        this.moveVector.scale(oldSpeed === 0 ? 1 : this.speed / oldSpeed);
+        oldSpeed = this.speed;
 
         if (movement) {
             this.speed = Math.min(MAX_SPEED, this.speed + ACC_SPEED);
-            // this.moveVector.add(Vector.fromOther(this.moveVector).scale(-0.5));
-            this.moveVector.add(Vector.fromOther(ACC_VECTOR).rotate(this.rotation)).normalize().scale(this.speed * elapsedTime / 100);
+            this.moveVector.add(Vector.construct(this.speed - oldSpeed, this.rotation));
         } else if (this.speed === 0) {
             this.moveVector = Vector.zero();
-        } else {
-            this.moveVector.add(Vector.fromOther(this.moveVector).normalize().scale(-DECELERATION_SPEED * elapsedTime / 100));
         }
-        // this.moveVector.add(this.type.move.move(elapsedTime, this.rotation, movement ? this.speed : 0, this.moveVector));
 
         this.x = mod(this.x + this.moveVector.x, WIDTH);
         this.y = mod(this.y + this.moveVector.y, HEIGHT);
@@ -329,9 +338,8 @@ class Player extends Unit {
 }
 
 class Shot extends GameObject {
-    constructor(id: number, public initiator: UnitType, public type: ShotType, x: number, y: number, rotation: number = 0, onDestroyed: DestroyedCallback) {
-        super(id, type, x, y, onDestroyed);
-        this.type.move = new ConstantMove(Vector.fromOther((this.type.move as ConstantMove).vector), rotation);
+    constructor(id: number, public initiator: UnitType, public type: ShotType, x: number, y: number, rot: number, onDestroyed: DestroyedCallback) {
+        super(id, type, x, y, rot, onDestroyed);
     }
 
     isCollidingWith(other: GameObject): boolean {
@@ -340,8 +348,8 @@ class Shot extends GameObject {
 }
 
 class Environment extends GameObject {
-    constructor(id: number, type: EnvironmentType, x: number, y: number, onDestroyed: DestroyedCallback) {
-        super(id, type, x, y, onDestroyed);
+    constructor(id: number, type: EnvironmentType, x: number, y: number, rot: number, onDestroyed: DestroyedCallback) {
+        super(id, type, x, y, rot, onDestroyed);
     }
 }
 
@@ -371,7 +379,7 @@ var priorInput = {
     down: false
 };
 
-var player = new Player(0, UnitTypeEnum.PLAYER, 0, 0, () => {
+var player = new Player(0, UnitTypeEnum.PLAYER, 0, 0, 0, () => {
     endGame();
 });
 player.x = WIDTH / 2 - player.getWidth() / 2;
@@ -494,7 +502,7 @@ function createEnvironment() {
     switch (Math.floor(Math.random() * 100)) {
         case 1:
             let id = environmentIdCounter;
-            environments.set(id, new Environment(id, EnvironmentTypeEnum.CLOUD, Math.random() * WIDTH, -EnvironmentTypeEnum.CLOUD.shape.getHeight(), function (cause: DeathCauseEnum) {
+            environments.set(id, new Environment(id, EnvironmentTypeEnum.CLOUD, Math.random() * WIDTH, -EnvironmentTypeEnum.CLOUD.shape.getHeight(), 0, function (cause: DeathCauseEnum) {
                 environments.delete(this.id);
             }));
             environmentIdCounter++;

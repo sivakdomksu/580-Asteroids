@@ -15,7 +15,7 @@ export default class Vector {
     }
 
     public static construct(magnitude: number, angle: number): Vector {
-        return new Vector(magnitude * Math.cos(rad(90 - angle)), magnitude * Math.cos(rad(angle)));
+        return new Vector(magnitude * Math.cos(rad(angle)), magnitude * Math.sin(rad(angle))).rotate(-90);
     }
 
     public isZero(): boolean {

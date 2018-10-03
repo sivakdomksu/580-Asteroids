@@ -15,7 +15,7 @@ var Vector = /** @class */ (function () {
         return new Vector(0, 0 /*, modX, modY*/);
     };
     Vector.construct = function (magnitude, angle) {
-        return new Vector(magnitude * Math.cos(rad(90 - angle)), magnitude * Math.cos(rad(angle)));
+        return new Vector(magnitude * Math.cos(rad(angle)), magnitude * Math.sin(rad(angle))).rotate(-90);
     };
     Vector.prototype.isZero = function () {
         return this.x == 0 && this.y == 0;

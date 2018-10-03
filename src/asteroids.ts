@@ -3,8 +3,8 @@ import Vector, {mod, rad} from "./vector";
 const WIDTH = 800;
 const HEIGHT = 600;
 const ROTATION_SPEED = 0.2;
-const ACC_SPEED = 0.5;
-const DECELERATION_SPEED = 0.08;
+const ACC_SPEED = 1;
+const DECELERATION_SPEED = 0.4;
 const MAX_SPEED = 8;
 
 //region GameObject parts
@@ -25,7 +25,6 @@ class Boundary {
     }
 
     isInBounds(x: number, y: number, shape: Shape): boolean {
-        // return true;
         return x >= this.minX && y >= this.minY && (x + shape.getWidth()) <= this.maxX && (y + shape.getHeight()) <= this.maxY;
     }
 }
@@ -304,9 +303,11 @@ class Unit extends GameObject {
 
     shoot(): Shot {
         let id = shotIdCounter;
-        let shot = new Shot(id, this.type, this.type.shot, this.x + this.getWidth() / 2, this.y, this.rotation, (cause: DeathCauseEnum) => {
+        let shot = new Shot(id, this.type, this.type.shot, this.x + this.getWidth() / 2, this.y + this.getHeight() / 2, this.rotation, (cause: DeathCauseEnum) => {
             shots.delete(id);
         });
+        this.moveVector.add(Vector.construct(0.65, this.rotation).scale(-1));
+        this.speed = Math.min(MAX_SPEED, this.speed + (0.65));
         shots.set(id, shot);
         shotIdCounter++;
         return shot;
@@ -321,15 +322,15 @@ class Player extends Unit {
     update(elapsedTime: number, rotation: number = 0, movement: boolean = false): void {
         this.rotation = mod(this.rotation + rotation * ROTATION_SPEED * elapsedTime, 360);
         let oldSpeed = this.speed;
-        this.speed = Math.max(0, this.speed - DECELERATION_SPEED);
+        this.speed = Math.max(0, this.speed - (DECELERATION_SPEED * elapsedTime / 100));
         this.moveVector.scale(oldSpeed === 0 ? 1 : this.speed / oldSpeed);
         oldSpeed = this.speed;
-
+        console.log("Speed: ", this.speed);
         if (movement) {
-            this.speed = Math.min(MAX_SPEED, this.speed + ACC_SPEED);
+            this.speed = Math.min(MAX_SPEED, this.speed + (ACC_SPEED * elapsedTime / 100));
             this.moveVector.add(Vector.construct(this.speed - oldSpeed, this.rotation));
         } else if (this.speed === 0) {
-            this.moveVector = Vector.zero();
+            // this.moveVector = Vector.zero();
         }
 
         this.x = mod(this.x + this.moveVector.x, WIDTH);
@@ -343,7 +344,7 @@ class Shot extends GameObject {
     }
 
     isCollidingWith(other: GameObject): boolean {
-        return super.isCollidingWith(other) && this.initiator !== other.type;
+        return !super.isCollidingWith(other) && this.initiator !== other.type;
     }
 }
 

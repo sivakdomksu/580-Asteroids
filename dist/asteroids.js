@@ -17,8 +17,8 @@ var vector_1 = require("./vector");
 var WIDTH = 800;
 var HEIGHT = 600;
 var ROTATION_SPEED = 0.2;
-var ACC_SPEED = 0.5;
-var DECELERATION_SPEED = 0.08;
+var ACC_SPEED = 1;
+var DECELERATION_SPEED = 0.4;
 var MAX_SPEED = 8;
 var DeathCauseEnum;
 (function (DeathCauseEnum) {
@@ -38,7 +38,6 @@ var Boundary = /** @class */ (function () {
         this.maxY = maxY;
     }
     Boundary.prototype.isInBounds = function (x, y, shape) {
-        // return true;
         return x >= this.minX && y >= this.minY && (x + shape.getWidth()) <= this.maxX && (y + shape.getHeight()) <= this.maxY;
     };
     return Boundary;
@@ -310,9 +309,11 @@ var Unit = /** @class */ (function (_super) {
     };
     Unit.prototype.shoot = function () {
         var id = shotIdCounter;
-        var shot = new Shot(id, this.type, this.type.shot, this.x + this.getWidth() / 2, this.y, this.rotation, function (cause) {
+        var shot = new Shot(id, this.type, this.type.shot, this.x + this.getWidth() / 2, this.y + this.getHeight() / 2, this.rotation, function (cause) {
             shots.delete(id);
         });
+        this.moveVector.add(vector_1.default.construct(0.65, this.rotation).scale(-1));
+        this.speed = Math.min(MAX_SPEED, this.speed + (0.65));
         shots.set(id, shot);
         shotIdCounter++;
         return shot;
@@ -331,15 +332,16 @@ var Player = /** @class */ (function (_super) {
         if (movement === void 0) { movement = false; }
         this.rotation = vector_1.mod(this.rotation + rotation * ROTATION_SPEED * elapsedTime, 360);
         var oldSpeed = this.speed;
-        this.speed = Math.max(0, this.speed - DECELERATION_SPEED);
+        this.speed = Math.max(0, this.speed - (DECELERATION_SPEED * elapsedTime / 100));
         this.moveVector.scale(oldSpeed === 0 ? 1 : this.speed / oldSpeed);
         oldSpeed = this.speed;
+        console.log("Speed: ", this.speed);
         if (movement) {
-            this.speed = Math.min(MAX_SPEED, this.speed + ACC_SPEED);
+            this.speed = Math.min(MAX_SPEED, this.speed + (ACC_SPEED * elapsedTime / 100));
             this.moveVector.add(vector_1.default.construct(this.speed - oldSpeed, this.rotation));
         }
         else if (this.speed === 0) {
-            this.moveVector = vector_1.default.zero();
+            // this.moveVector = Vector.zero();
         }
         this.x = vector_1.mod(this.x + this.moveVector.x, WIDTH);
         this.y = vector_1.mod(this.y + this.moveVector.y, HEIGHT);
@@ -355,7 +357,7 @@ var Shot = /** @class */ (function (_super) {
         return _this;
     }
     Shot.prototype.isCollidingWith = function (other) {
-        return _super.prototype.isCollidingWith.call(this, other) && this.initiator !== other.type;
+        return !_super.prototype.isCollidingWith.call(this, other) && this.initiator !== other.type;
     };
     return Shot;
 }(GameObject));

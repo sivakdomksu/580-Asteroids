@@ -16,14 +16,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var vector_1 = require("./vector");
 var WIDTH = 800;
 var HEIGHT = 600;
-var PLAYER_HEIGHT = 50;
-var ENEMY_SPAWN_RATE = 500;
-var ENEMY_SPAWN_PROBABILITY = 3;
-var ROTATION_SPEED = 3;
+var ROTATION_SPEED = 0.2;
 var ACC_SPEED = 0.5;
-var ACC_VECTOR = vector_1.default.from(0, ACC_SPEED);
-var DECELERATION_SPEED = 0.05;
-var MAX_SPEED = 10;
+var ACC_VECTOR = vector_1.default.from(0, -ACC_SPEED);
+var DECELERATION_SPEED = 0.08;
+var MAX_SPEED = 20;
 var DeathCauseEnum;
 (function (DeathCauseEnum) {
     DeathCauseEnum[DeathCauseEnum["OUT_OF_BOUNDS"] = 0] = "OUT_OF_BOUNDS";
@@ -126,20 +123,60 @@ var EnvironmentType = /** @class */ (function (_super) {
     return EnvironmentType;
 }(GameObjectType));
 var Move = /** @class */ (function () {
-    function Move(speedX, speedY) {
-        this.speedX = speedX;
-        this.speedY = speedY;
+    function Move() {
     }
-    Move.prototype.move = function (elapsedTime, x, y, object) {
-        return {
-            x: x + elapsedTime * this.speedX,
-            y: y + elapsedTime * this.speedY
-        };
+    Move.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
+        if (rotation === void 0) { rotation = 0; }
+        if (speed === void 0) { speed = 0; }
+        if (moveVector === void 0) { moveVector = null; }
+        throw new Error("Not Implemented!");
     };
     return Move;
 }());
+var ConstantMove = /** @class */ (function (_super) {
+    __extends(ConstantMove, _super);
+    function ConstantMove(vector, rotation) {
+        if (rotation === void 0) { rotation = 0; }
+        var _this = _super.call(this) || this;
+        _this.vector = vector;
+        _this.rotation = rotation;
+        if (_this.rotation != 0) {
+            vector.rotate(_this.rotation);
+        }
+        return _this;
+    }
+    ConstantMove.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
+        if (rotation === void 0) { rotation = 0; }
+        if (speed === void 0) { speed = 0; }
+        if (moveVector === void 0) { moveVector = null; }
+        return vector_1.default.from(this.vector.x * elapsedTime, this.vector.y * elapsedTime);
+    };
+    ConstantMove.prototype.setRotation = function (rotation) {
+        this.rotation = rotation;
+        this.vector.rotate(rotation);
+    };
+    return ConstantMove;
+}(Move));
+var DynamicMove = /** @class */ (function (_super) {
+    __extends(DynamicMove, _super);
+    function DynamicMove(accVector, decSpeed) {
+        var _this = _super.call(this) || this;
+        _this.accVector = accVector;
+        _this.decSpeed = decSpeed;
+        return _this;
+    }
+    DynamicMove.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
+        var vector = vector_1.default.fromOther(moveVector).normalize().scale(-this.decSpeed);
+        if (speed != 0) {
+            vector.add(vector_1.default.fromOther(moveVector).add(vector).scale(-0.5));
+            vector.add(vector_1.default.fromOther(this.accVector).rotate(rotation)).normalize().scale(speed);
+        }
+        return vector;
+    };
+    return DynamicMove;
+}(Move));
 var ShapeEnum = {
-    PLAYER: new Rectangle(PLAYER_HEIGHT, 75, "#6a7fed", 0),
+    PLAYER: new Rectangle(20, 35, "#6a7fed", 0),
     ENEMY: new Rectangle(45, 50, "#ff0000", 0),
     SHOT: new Rectangle(5, 5, "#ffffff", 0),
     HEALTH_ENEMY: new Rectangle(45, 50, "#91ff6f", 0),
@@ -173,11 +210,11 @@ var BountyEnum = {
     }
 };
 var MoveTypeEnum = {
-    PLAYER: new Move(0.5, 0),
-    ENEMY_SIMPLE: new Move(0, 0.1),
-    PLAYER_SHOT: new Move(0, -0.5),
-    ENEMY_SHOT: new Move(0, 0.4),
-    CLOUD: new Move(0, 0.05)
+    PLAYER: new DynamicMove(ACC_VECTOR, DECELERATION_SPEED),
+    ENEMY_SIMPLE: new ConstantMove(vector_1.default.from(0, 0.1)),
+    PLAYER_SHOT: new ConstantMove(vector_1.default.from(0, -0.5)),
+    ENEMY_SHOT: new ConstantMove(vector_1.default.from(0, 0.4)),
+    CLOUD: new ConstantMove(vector_1.default.from(0, 0.05))
 };
 var ShotTypeEnum = {
     PLAYER: new ShotType(1, ShapeEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.PLAYER_SHOT),
@@ -197,14 +234,15 @@ var GameObject = /** @class */ (function () {
         this.y = y;
         this.onDestroyed = onDestroyed;
         this.rotation = 0;
+        this.speed = 0;
     }
     GameObject.prototype.update = function (elapsedTime, rotation, movement) {
         if (rotation === void 0) { rotation = 0; }
         if (movement === void 0) { movement = false; }
-        var move = this.type.move.move(elapsedTime, this.x, this.y, this);
-        if (this.type.boundary.isInBounds(move.x, move.y, this.type.shape)) {
-            this.x = move.x;
-            this.y = move.y;
+        var move = this.type.move.move(elapsedTime);
+        if (this.type.boundary.isInBounds(this.x + move.x, this.y + move.y, this.type.shape)) {
+            this.x += move.x;
+            this.y += move.y;
         }
         else if (this.type != UnitTypeEnum.PLAYER) {
             this.onDestroyed(DeathCauseEnum.OUT_OF_BOUNDS);
@@ -213,6 +251,16 @@ var GameObject = /** @class */ (function () {
     GameObject.prototype.isCollidingWith = function (other) {
         //TODO
         return false;
+    };
+    //region Helper Methods
+    GameObject.prototype.getWidth = function () {
+        return this.type.shape.getWidth();
+    };
+    GameObject.prototype.getHeight = function () {
+        return this.type.shape.getHeight();
+    };
+    GameObject.prototype.getColor = function () {
+        return this.type.shape.color;
     };
     return GameObject;
 }());
@@ -262,7 +310,7 @@ var Unit = /** @class */ (function (_super) {
     };
     Unit.prototype.shoot = function () {
         var id = shotIdCounter;
-        var shot = new Shot(id, this.type, this.type.shot, this.x + this.type.shape.getWidth() / 2, this.y, function (cause) {
+        var shot = new Shot(id, this.type, this.type.shot, this.x + this.getWidth() / 2, this.y, this.rotation, function (cause) {
             shots.delete(id);
         });
         shots.set(id, shot);
@@ -276,32 +324,39 @@ var Player = /** @class */ (function (_super) {
     function Player(id, type, x, y, onDestroyed) {
         var _this = _super.call(this, id, type, x, y, onDestroyed) || this;
         _this.type = type;
-        _this.speed = 0;
         return _this;
     }
     Player.prototype.update = function (elapsedTime, rotation, movement) {
         if (rotation === void 0) { rotation = 0; }
         if (movement === void 0) { movement = false; }
-        this.rotation += (rotation * ROTATION_SPEED * elapsedTime) % 360;
+        this.rotation = vector_1.mod(this.rotation + rotation * ROTATION_SPEED * elapsedTime, 360);
         this.speed = Math.max(0, this.speed - DECELERATION_SPEED);
-        if (movement && this.speed + ACC_SPEED > MAX_SPEED) {
-            this.moveVector.add(vector_1.default.rotate(ACC_VECTOR, this.rotation));
+        console.log("Speed: ", this.speed);
+        if (movement) {
+            this.speed = Math.min(MAX_SPEED, this.speed + ACC_SPEED);
+            // this.moveVector.add(Vector.fromOther(this.moveVector).scale(-0.5));
+            this.moveVector.add(vector_1.default.fromOther(ACC_VECTOR).rotate(this.rotation)).normalize().scale(this.speed * elapsedTime / 100);
+        }
+        else if (this.speed === 0) {
+            this.moveVector = vector_1.default.zero();
         }
         else {
-            this.speed = Math.min(MAX_SPEED, movement ? this.speed + ACC_SPEED : Number.MAX_VALUE);
+            this.moveVector.add(vector_1.default.fromOther(this.moveVector).normalize().scale(-DECELERATION_SPEED * elapsedTime / 100));
         }
-        this.moveVector.add(vector_1.default.fromOther(this.moveVector).normalize().scale(-DECELERATION_SPEED));
-        this.x = (this.x + this.moveVector.x) % WIDTH;
-        this.y = (this.y + this.moveVector.y) % HEIGHT;
+        // this.moveVector.add(this.type.move.move(elapsedTime, this.rotation, movement ? this.speed : 0, this.moveVector));
+        this.x = vector_1.mod(this.x + this.moveVector.x, WIDTH);
+        this.y = vector_1.mod(this.y + this.moveVector.y, HEIGHT);
     };
     return Player;
 }(Unit));
 var Shot = /** @class */ (function (_super) {
     __extends(Shot, _super);
-    function Shot(id, initiator, type, x, y, onDestroyed) {
+    function Shot(id, initiator, type, x, y, rotation, onDestroyed) {
+        if (rotation === void 0) { rotation = 0; }
         var _this = _super.call(this, id, type, x, y, onDestroyed) || this;
         _this.initiator = initiator;
         _this.type = type;
+        _this.type.move = new ConstantMove(vector_1.default.fromOther(_this.type.move.vector), rotation);
         return _this;
     }
     Shot.prototype.isCollidingWith = function (other) {
@@ -341,8 +396,8 @@ var priorInput = {
 var player = new Player(0, UnitTypeEnum.PLAYER, 0, 0, function () {
     endGame();
 });
-player.x = WIDTH / 2 - player.type.shape.getWidth() / 2;
-player.y = HEIGHT - player.type.shape.getHeight();
+player.x = WIDTH / 2 - player.getWidth() / 2;
+player.y = HEIGHT - player.getHeight();
 var score = 0;
 var scoreElement = document.getElementById("score_text");
 var livesElement = document.getElementById("lives_text");
@@ -380,9 +435,11 @@ function handleKeydown(event) {
     switch (event.key) {
         case ' ':
             currentInput.space = true;
+            break;
         case 'ArrowUp':
         case 'w':
             currentInput.up = true;
+            break;
         case 'ArrowLeft':
         case 'a':
             currentInput.left = true;
@@ -398,9 +455,11 @@ function handleKeyup(event) {
     switch (event.key) {
         case ' ':
             currentInput.space = false;
+            break;
         case 'ArrowUp':
         case 'w':
             currentInput.up = false;
+            break;
         case 'ArrowLeft':
         case 'a':
             currentInput.left = false;
@@ -477,18 +536,23 @@ function update(elapsedTime) {
 function render(elapsedTime) {
     backContext.clearRect(0, 0, WIDTH, HEIGHT);
     environments.forEach(function (value) {
-        backContext.fillStyle = value.type.shape.color;
-        backContext.fillRect(value.x, value.y, value.type.shape.getWidth(), value.type.shape.getHeight());
+        backContext.fillStyle = value.getColor();
+        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
     });
-    backContext.fillStyle = player.type.shape.color;
-    backContext.fillRect(player.x, player.y, player.type.shape.getWidth(), player.type.shape.getHeight());
+    backContext.save();
+    backContext.fillStyle = player.getColor();
+    backContext.translate(player.x + 0.5 * player.getWidth(), player.y + 0.5 * player.getHeight());
+    backContext.rotate(vector_1.rad(player.rotation));
+    backContext.translate(-(player.x + 0.5 * player.getWidth()), -(player.y + 0.5 * player.getHeight()));
+    backContext.fillRect(player.x, player.y, player.getWidth(), player.getHeight());
+    backContext.restore();
     enemies.forEach(function (value) {
-        backContext.fillStyle = value.type.shape.color;
-        backContext.fillRect(value.x, value.y, value.type.shape.getWidth(), value.type.shape.getHeight());
+        backContext.fillStyle = value.getColor();
+        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
     });
     shots.forEach(function (value) {
-        backContext.fillStyle = value.type.shape.color;
-        backContext.fillRect(value.x, value.y, value.type.shape.getWidth(), value.type.shape.getHeight());
+        backContext.fillStyle = value.getColor();
+        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
     });
 }
 function updateStatus(scoreDelta, healthDelta) {

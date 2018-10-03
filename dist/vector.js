@@ -5,14 +5,17 @@ var Vector = /** @class */ (function () {
         this.x = x;
         this.y = y;
     }
-    Vector.from = function (x, y) {
-        return new Vector(x, y);
+    Vector.from = function (x, y /*, modX: number, modY: number*/) {
+        return new Vector(x, y /*, modX, modY*/);
     };
     Vector.fromOther = function (other) {
-        return new Vector(other.x, other.y);
+        return new Vector(other.x, other.y /*, other.modX, other.modY*/);
     };
-    Vector.zero = function () {
-        return new Vector(0, 0);
+    Vector.zero = function ( /*modX: number, modY: number*/) {
+        return new Vector(0, 0 /*, modX, modY*/);
+    };
+    Vector.construct = function (magnitude, angle) {
+        return new Vector(magnitude * Math.cos(rad(90 - angle)), magnitude * Math.cos(rad(angle)));
     };
     Vector.prototype.isZero = function () {
         return this.x == 0 && this.y == 0;
@@ -21,7 +24,7 @@ var Vector = /** @class */ (function () {
         return Math.sqrt(this.x * this.x + this.y * this.y);
     };
     Vector.add = function (a, b) {
-        return Vector.from(a.x + b.x, a.y + b.y);
+        return Vector.fromOther(a).add(b);
     };
     Vector.prototype.add = function (other) {
         this.x += other.x;
@@ -29,16 +32,16 @@ var Vector = /** @class */ (function () {
         return this;
     };
     Vector.rotate = function (vector, angle) {
-        return Vector.from(vector.x * Math.cos(angle) - vector.y * Math.sin(angle), vector.x * Math.sin(angle) + vector.y * Math.cos(angle));
+        return Vector.fromOther(vector).rotate(angle);
     };
     Vector.prototype.rotate = function (angle) {
         var oldX = this.x;
-        this.x = this.x * Math.cos(angle) - this.y * Math.sin(angle);
-        this.y = oldX * Math.sin(angle) + this.y * Math.cos(angle);
+        this.x = this.x * Math.cos(rad(angle)) - this.y * Math.sin(rad(angle));
+        this.y = oldX * Math.sin(rad(angle)) + this.y * Math.cos(rad(angle));
         return this;
     };
     Vector.scale = function (vector, scalar) {
-        return Vector.from(vector.x * scalar, vector.y * scalar);
+        return Vector.fromOther(vector).scale(scalar);
     };
     Vector.prototype.scale = function (scalar) {
         this.x *= scalar;
@@ -46,12 +49,20 @@ var Vector = /** @class */ (function () {
         return this;
     };
     Vector.normalize = function (vector) {
-        return Vector.scale(Vector.fromOther(vector), 1 / vector.magnitude());
+        return Vector.fromOther(vector).normalize();
     };
     Vector.prototype.normalize = function () {
-        return this.scale(1 / this.magnitude());
+        return this.magnitude() === 0 ? this : this.scale(1 / this.magnitude());
     };
     return Vector;
 }());
 exports.default = Vector;
+function mod(n, m) {
+    return ((n % m) + m) % m;
+}
+exports.mod = mod;
+function rad(n) {
+    return n * (Math.PI / 180);
+}
+exports.rad = rad;
 //# sourceMappingURL=vector.js.map

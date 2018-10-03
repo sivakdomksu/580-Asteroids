@@ -1,15 +1,12 @@
-import Vector from "./vector";
+import Vector, {mod, rad} from "./vector";
 
 const WIDTH = 800;
 const HEIGHT = 600;
-const PLAYER_HEIGHT = 50;
-const ENEMY_SPAWN_RATE = 500;
-const ENEMY_SPAWN_PROBABILITY = 3;
-const ROTATION_SPEED = 3;
+const ROTATION_SPEED = 0.2;
 const ACC_SPEED = 0.5;
-const ACC_VECTOR = Vector.from(0, ACC_SPEED);
-const DECELERATION_SPEED = 0.05;
-const MAX_SPEED = 10;
+const ACC_VECTOR = Vector.from(0, -ACC_SPEED);
+const DECELERATION_SPEED = 0.08;
+const MAX_SPEED = 20;
 
 //region GameObject parts
 type BountyCallback = (enemy: Unit, shot: Shot, type: HitTypeEnum) => any;
@@ -103,21 +100,51 @@ class EnvironmentType extends GameObjectType {
     }
 }
 
-class Move {
-    constructor(public speedX: number, public speedY: number) {
-
+abstract class Move {
+    protected constructor() {
     }
 
-    move(elapsedTime: number, x: number, y: number, object: GameObject) {
-        return {
-            x: x + elapsedTime * this.speedX,
-            y: y + elapsedTime * this.speedY
+    move(elapsedTime: number, rotation: number = 0, speed: number = 0, moveVector: Vector = null): Vector {
+        throw new Error("Not Implemented!");
+    }
+}
+
+class ConstantMove extends Move {
+    constructor(public vector: Vector, private rotation: number = 0) {
+        super();
+        if (this.rotation != 0) {
+            vector.rotate(this.rotation);
         }
+    }
+
+    move(elapsedTime: number, rotation: number = 0, speed: number = 0, moveVector: Vector = null): Vector {
+        return Vector.from(this.vector.x * elapsedTime, this.vector.y * elapsedTime);
+    }
+
+
+    public setRotation(rotation: number) {
+        this.rotation = rotation;
+        this.vector.rotate(rotation);
+    }
+}
+
+class DynamicMove extends Move {
+    constructor(private accVector: Vector, private decSpeed: number) {
+        super();
+    }
+
+    move(elapsedTime: number, rotation: number, speed: number, moveVector: Vector): Vector {
+        let vector = Vector.fromOther(moveVector).normalize().scale(-this.decSpeed);
+        if (speed != 0) {
+            vector.add(Vector.fromOther(moveVector).add(vector).scale(-0.5));
+            vector.add(Vector.fromOther(this.accVector).rotate(rotation)).normalize().scale(speed);
+        }
+        return vector;
     }
 }
 
 const ShapeEnum = {
-    PLAYER: new Rectangle(PLAYER_HEIGHT, 75, "#6a7fed", 0),
+    PLAYER: new Rectangle(20, 35, "#6a7fed", 0),
     ENEMY: new Rectangle(45, 50, "#ff0000", 0),
     SHOT: new Rectangle(5, 5, "#ffffff", 0),
     HEALTH_ENEMY: new Rectangle(45, 50, "#91ff6f", 0),
@@ -154,11 +181,11 @@ const BountyEnum = {
 };
 
 const MoveTypeEnum = {
-    PLAYER: new Move(0.5, 0),
-    ENEMY_SIMPLE: new Move(0, 0.1),
-    PLAYER_SHOT: new Move(0, -0.5),
-    ENEMY_SHOT: new Move(0, 0.4),
-    CLOUD: new Move(0, 0.05)
+    PLAYER: new DynamicMove(ACC_VECTOR, DECELERATION_SPEED),
+    ENEMY_SIMPLE: new ConstantMove(Vector.from(0, 0.1)),
+    PLAYER_SHOT: new ConstantMove(Vector.from(0, -0.5)),
+    ENEMY_SHOT: new ConstantMove(Vector.from(0, 0.4)),
+    CLOUD: new ConstantMove(Vector.from(0, 0.05))
 };
 
 const ShotTypeEnum = {
@@ -183,14 +210,16 @@ type DestroyedCallback = (cause: DeathCauseEnum) => any;
 abstract class GameObject {
     public rotation: number = 0;
 
+    protected speed: number = 0;
+
     protected constructor(public id: number, public type: GameObjectType, public x: number, public y: number, public onDestroyed: DestroyedCallback) {
     }
 
     update(elapsedTime: number, rotation: number = 0, movement: boolean = false) {
-        let move = this.type.move.move(elapsedTime, this.x, this.y, this);
-        if (this.type.boundary.isInBounds(move.x, move.y, this.type.shape)) {
-            this.x = move.x;
-            this.y = move.y;
+        let move = this.type.move.move(elapsedTime);
+        if (this.type.boundary.isInBounds(this.x + move.x, this.y + move.y, this.type.shape)) {
+            this.x += move.x;
+            this.y += move.y;
         } else if (this.type != UnitTypeEnum.PLAYER) {
             this.onDestroyed(DeathCauseEnum.OUT_OF_BOUNDS);
         }
@@ -200,6 +229,21 @@ abstract class GameObject {
         //TODO
         return false;
     }
+
+    //region Helper Methods
+    public getWidth(): number {
+        return this.type.shape.getWidth()
+    }
+
+    public getHeight(): number {
+        return this.type.shape.getHeight();
+    }
+
+    public getColor(): string {
+        return this.type.shape.color;
+    }
+
+    //endregion
 }
 
 class Unit extends GameObject {
@@ -249,7 +293,7 @@ class Unit extends GameObject {
 
     shoot(): Shot {
         let id = shotIdCounter;
-        let shot = new Shot(id, this.type, this.type.shot, this.x + this.type.shape.getWidth() / 2, this.y, (cause: DeathCauseEnum) => {
+        let shot = new Shot(id, this.type, this.type.shot, this.x + this.getWidth() / 2, this.y, this.rotation, (cause: DeathCauseEnum) => {
             shots.delete(id);
         });
         shots.set(id, shot);
@@ -259,30 +303,35 @@ class Unit extends GameObject {
 }
 
 class Player extends Unit {
-    private speed: number = 0;
-
     constructor(id: number, public type: UnitType, x: number, y: number, onDestroyed: DestroyedCallback) {
         super(id, type, x, y, onDestroyed);
     }
 
     update(elapsedTime: number, rotation: number = 0, movement: boolean = false): void {
-        this.rotation += (rotation * ROTATION_SPEED * elapsedTime) % 360;
+        this.rotation = mod(this.rotation + rotation * ROTATION_SPEED * elapsedTime, 360);
         this.speed = Math.max(0, this.speed - DECELERATION_SPEED);
-        if (movement && this.speed + ACC_SPEED > MAX_SPEED) {
-            this.moveVector.add(Vector.rotate(ACC_VECTOR, this.rotation));
-        } else {
-            this.speed = Math.min(MAX_SPEED, movement ? this.speed + ACC_SPEED : Number.MAX_VALUE);
-        }
-        this.moveVector.add(Vector.fromOther(this.moveVector).normalize().scale(-DECELERATION_SPEED));
+        console.log("Speed: ", this.speed);
 
-        this.x = (this.x + this.moveVector.x) % WIDTH;
-        this.y = (this.y + this.moveVector.y) % HEIGHT;
+        if (movement) {
+            this.speed = Math.min(MAX_SPEED, this.speed + ACC_SPEED);
+            // this.moveVector.add(Vector.fromOther(this.moveVector).scale(-0.5));
+            this.moveVector.add(Vector.fromOther(ACC_VECTOR).rotate(this.rotation)).normalize().scale(this.speed * elapsedTime / 100);
+        } else if (this.speed === 0) {
+            this.moveVector = Vector.zero();
+        } else {
+            this.moveVector.add(Vector.fromOther(this.moveVector).normalize().scale(-DECELERATION_SPEED * elapsedTime / 100));
+        }
+        // this.moveVector.add(this.type.move.move(elapsedTime, this.rotation, movement ? this.speed : 0, this.moveVector));
+
+        this.x = mod(this.x + this.moveVector.x, WIDTH);
+        this.y = mod(this.y + this.moveVector.y, HEIGHT);
     }
 }
 
 class Shot extends GameObject {
-    constructor(id: number, public initiator: UnitType, public type: ShotType, x: number, y: number, onDestroyed: DestroyedCallback) {
+    constructor(id: number, public initiator: UnitType, public type: ShotType, x: number, y: number, rotation: number = 0, onDestroyed: DestroyedCallback) {
         super(id, type, x, y, onDestroyed);
+        this.type.move = new ConstantMove(Vector.fromOther((this.type.move as ConstantMove).vector), rotation);
     }
 
     isCollidingWith(other: GameObject): boolean {
@@ -325,8 +374,8 @@ var priorInput = {
 var player = new Player(0, UnitTypeEnum.PLAYER, 0, 0, () => {
     endGame();
 });
-player.x = WIDTH / 2 - player.type.shape.getWidth() / 2;
-player.y = HEIGHT - player.type.shape.getHeight();
+player.x = WIDTH / 2 - player.getWidth() / 2;
+player.y = HEIGHT - player.getHeight();
 var score = 0;
 var scoreElement = document.getElementById("score_text");
 var livesElement = document.getElementById("lives_text");
@@ -369,9 +418,11 @@ function handleKeydown(event) {
     switch (event.key) {
         case ' ':
             currentInput.space = true;
+            break;
         case 'ArrowUp':
         case 'w':
             currentInput.up = true;
+            break;
         case 'ArrowLeft':
         case 'a':
             currentInput.left = true;
@@ -389,9 +440,11 @@ function handleKeyup(event) {
     switch (event.key) {
         case ' ':
             currentInput.space = false;
+            break;
         case 'ArrowUp':
         case 'w':
             currentInput.up = false;
+            break;
         case 'ArrowLeft':
         case 'a':
             currentInput.left = false;
@@ -476,21 +529,26 @@ function render(elapsedTime: number) {
     backContext.clearRect(0, 0, WIDTH, HEIGHT);
 
     environments.forEach(value => {
-        backContext.fillStyle = value.type.shape.color;
-        backContext.fillRect(value.x, value.y, value.type.shape.getWidth(), value.type.shape.getHeight());
+        backContext.fillStyle = value.getColor();
+        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
     });
 
-    backContext.fillStyle = player.type.shape.color;
-    backContext.fillRect(player.x, player.y, player.type.shape.getWidth(), player.type.shape.getHeight());
+    backContext.save();
+    backContext.fillStyle = player.getColor();
+    backContext.translate(player.x + 0.5 * player.getWidth(), player.y + 0.5 * player.getHeight());
+    backContext.rotate(rad(player.rotation));
+    backContext.translate(-(player.x + 0.5 * player.getWidth()), -(player.y + 0.5 * player.getHeight()));
+    backContext.fillRect(player.x, player.y, player.getWidth(), player.getHeight());
+    backContext.restore();
 
     enemies.forEach(value => {
-        backContext.fillStyle = value.type.shape.color;
-        backContext.fillRect(value.x, value.y, value.type.shape.getWidth(), value.type.shape.getHeight());
+        backContext.fillStyle = value.getColor();
+        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
     });
 
     shots.forEach(value => {
-        backContext.fillStyle = value.type.shape.color;
-        backContext.fillRect(value.x, value.y, value.type.shape.getWidth(), value.type.shape.getHeight());
+        backContext.fillStyle = value.getColor();
+        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
     });
 }
 

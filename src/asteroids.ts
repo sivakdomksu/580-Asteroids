@@ -8,9 +8,12 @@ const DECELERATION_SPEED = 0.4;
 const KNOCK_BACK = 0.65;
 const MAX_SPEED = 8;
 const ENEMY_RADIUS = 20;
+const ENEMY_SPAWN_RATE = 1000;
+const ENEMY_SPAWN_PROBABILITY = 3;
 
 //region GameObject parts
 type BountyCallback = (enemy: Unit, shot: Shot, type: HitTypeEnum) => any;
+type SpeedStruct = { curr: number, dec: number, acc: number }
 
 enum DeathCauseEnum {
     OUT_OF_BOUNDS,
@@ -32,6 +35,16 @@ class Boundary {
     }
 }
 
+class NoBoundary extends Boundary {
+    constructor() {
+        super(0, 0, 0, 0);
+    }
+
+    isInBounds(x: number, y: number, shape: Shape): boolean {
+        return true;
+    }
+}
+
 abstract class Shape {
     protected constructor(public color: string, public mass: number) {
     }
@@ -46,10 +59,6 @@ abstract class Shape {
 class Rectangle extends Shape {
     constructor(public width: number, public height: number, color: string, mass: number) {
         super(color, mass);
-    }
-
-    isInBounds(x: number, y: number, boundary: Boundary) {
-        //TODO
     }
 
     getHeight(): number {
@@ -71,10 +80,6 @@ class Circle extends Shape {
         super(color, mass);
     }
 
-    isInBounds(x: number, y: number, boundary: Boundary) {
-
-    }
-
     getHeight(): number {
         return 2 * this.radius;
     }
@@ -84,6 +89,10 @@ class Circle extends Shape {
     }
 
     render(context: CanvasRenderingContext2D) {
+        context.fillStyle = this.color;
+        context.beginPath();
+        context.arc(this.radius, this.radius, this.radius, 0, 2 * Math.PI);
+        context.fill();
     }
 }
 
@@ -116,7 +125,7 @@ abstract class Move {
     protected constructor() {
     }
 
-    move(elapsedTime: number, rotation: number = 0, speed: number = 0, moveVector: Vector = null): Vector {
+    move(elapsedTime: number, rotation: number = 0, speed: SpeedStruct = null, moveVector: Vector = null): Vector {
         throw new Error("Not Implemented!");
     }
 
@@ -130,7 +139,7 @@ class ConstantMove extends Move {
         super();
     }
 
-    move(elapsedTime: number, rotation: number = 0, speed: number = 0, moveVector: Vector = null): Vector {
+    move(elapsedTime: number, rotation: number = 0, speed: SpeedStruct = null, moveVector: Vector = null): Vector {
         return Vector.from(this.vector.x * elapsedTime, this.vector.y * elapsedTime);
     }
 
@@ -150,9 +159,13 @@ class DynamicMove extends Move {
         super();
     }
 
-    move(elapsedTime: number, rotation: number, speed: number): Vector {
-
-        return null;
+    move(elapsedTime: number, rotation: number, speed: SpeedStruct = null, moveVector: Vector = null): Vector {
+        let vector = Vector.fromOther(moveVector);
+        vector.scale(speed.dec === 0 ? 1 : speed.curr / (speed.curr + speed.dec));
+        if (speed.acc > 0) {
+            vector.add(Vector.construct(speed.acc, rotation));
+        }
+        return vector;
     }
 
 
@@ -174,7 +187,7 @@ const ShapeEnum = {
 };
 
 const BoundaryEnum = {
-    NONE: new Boundary(Number.MIN_VALUE, Number.MIN_VALUE, Number.MAX_VALUE, Number.MAX_VALUE),
+    NONE: new NoBoundary(),
     SHOT: new Boundary(0, 0, WIDTH, HEIGHT),
     CLOUD: new Boundary(-ShapeEnum.CLOUD.width, -ShapeEnum.CLOUD.height, WIDTH + ShapeEnum.CLOUD.width, HEIGHT + ShapeEnum.CLOUD.height)
 };
@@ -215,6 +228,9 @@ const ShotTypeEnum = {
 
 const UnitTypeEnum = {
     PLAYER: new UnitType(3, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
+    ASTEROID_S: new UnitType(1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+    ASTEROID_M: new UnitType(1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+    ASTEROID_L: new UnitType(1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
 };
 
 const EnvironmentTypeEnum = {
@@ -239,12 +255,27 @@ abstract class GameObject {
 
     update(elapsedTime: number, rotation: number = 0, movement: boolean = false) {
         let move = this.move.move(elapsedTime);
+        let old = Vector.from(this.x, this.y);
         if (this.type.boundary.isInBounds(this.x + move.x, this.y + move.y, this.type.shape)) {
             this.x += move.x;
             this.y += move.y;
+            if (this.type.boundary instanceof NoBoundary) {
+                this.warpToOtherSide(old);
+            }
         } else if (this.type != UnitTypeEnum.PLAYER) {
             this.onDestroyed(DeathCauseEnum.OUT_OF_BOUNDS);
         }
+    }
+
+    protected warpToOtherSide(old: Vector) {
+        if (this.x > WIDTH && !(old.x > WIDTH))
+            this.x = -this.getWidth();
+        else if (this.x - this.getWidth() < 0 && !(old.x - this.getWidth() < 0))
+            this.x = WIDTH;
+        if (this.y > HEIGHT && !(old.y > HEIGHT))
+            this.y = -this.getHeight();
+        else if (this.y - this.getHeight() < 0 && !(old.y - this.getHeight() < 0))
+            this.y = HEIGHT;
     }
 
     isCollidingWith(other: GameObject): boolean {
@@ -344,17 +375,19 @@ class Player extends Unit {
         this.rotation = mod(this.rotation + rotation * ROTATION_SPEED * elapsedTime, 360);
         let oldSpeed = this.speed;
         this.speed = Math.max(0, this.speed - (DECELERATION_SPEED * elapsedTime / 100));
-        this.moveVector.scale(oldSpeed === 0 ? 1 : this.speed / oldSpeed);
+        let decSpeed = oldSpeed - this.speed;
+        let accSpeed = 0;
         oldSpeed = this.speed;
         if (movement) {
             this.speed = Math.min(MAX_SPEED, this.speed + (ACC_SPEED * elapsedTime / 100));
-            this.moveVector.add(Vector.construct(this.speed - oldSpeed, this.rotation));
-        } else if (this.speed === 0) {
-            // this.moveVector = Vector.zero();
+            accSpeed = this.speed - oldSpeed;
         }
+        this.moveVector = this.move.move(elapsedTime, this.rotation, {curr: oldSpeed, dec: decSpeed, acc: accSpeed});
 
-        this.x = mod(this.x + this.moveVector.x, WIDTH);
-        this.y = mod(this.y + this.moveVector.y, HEIGHT);
+        let old = Vector.from(this.x, this.y);
+        this.x += this.moveVector.x;
+        this.y += this.moveVector.y;
+        this.warpToOtherSide(old);
     }
 }
 
@@ -364,7 +397,7 @@ class Shot extends GameObject {
     }
 
     isCollidingWith(other: GameObject): boolean {
-        return !super.isCollidingWith(other) && this.initiator !== other.type;
+        return super.isCollidingWith(other) && this.initiator !== other.type;
     }
 }
 
@@ -488,35 +521,29 @@ function handleKeyup(event) {
 window.addEventListener('keyup', handleKeyup);
 
 function createEnemy(elapsedTime: number) {
-    // enemyTimeToSpawn += elapsedTime;
-    // if (enemyTimeToSpawn > ENEMY_SPAWN_RATE) {
-    //     enemyTimeToSpawn = 0;
-    //     if (Math.random() * ENEMY_SPAWN_PROBABILITY < 1) {
-    //         let id = enemyIdCounter;
-    //         let type = UnitTypeEnum.ENEMY;
-    //         switch (Math.floor(Math.random() * 20)) {
-    //             case 0:
-    //             case 2:
-    //                 type = UnitTypeEnum.HEALTH_ENEMY;
-    //                 break;
-    //             case 1:
-    //                 type = UnitTypeEnum.BIG_ONE;
-    //                 break;
-    //             case 3:
-    //                 type = UnitTypeEnum.FAST_ONE;
-    //                 break;
-    //         }
-    //         enemies.set(id, new Unit(id, type, Math.random() * (WIDTH - ShapeEnum.ENEMY.width), -ShapeEnum.ENEMY.height, function (cause: DeathCauseEnum) {
-    //             if (cause == DeathCauseEnum.OUT_OF_BOUNDS) {
-    //                 player.onHit(this);
-    //             } else if (cause == DeathCauseEnum.LIVES) {
-    //                 this.type.bounties.forEach(bounty => bounty(this, null, HitTypeEnum.DESTROYED));
-    //             }
-    //             enemies.delete(id);
-    //         }));
-    //         enemyIdCounter++;
-    //     }
-    // }
+    enemyTimeToSpawn += elapsedTime;
+    if (enemyTimeToSpawn > ENEMY_SPAWN_RATE) {
+        enemyTimeToSpawn = 0;
+        if (Math.random() * ENEMY_SPAWN_PROBABILITY < 1) {
+            let id = enemyIdCounter;
+            let type = UnitTypeEnum.ASTEROID_M;
+            switch (Math.floor(Math.random() * 10)) {
+                case 0:
+                    type = UnitTypeEnum.ASTEROID_L;
+                    break;
+                case 1:
+                    type = UnitTypeEnum.ASTEROID_S;
+                    break;
+            }
+            enemies.set(id, new Unit(id, type, Math.random() * (WIDTH - type.shape.getWidth()), -type.shape.getHeight(), Math.random() * 360, function (cause: DeathCauseEnum) {
+                if (cause == DeathCauseEnum.LIVES) {
+                    this.type.bounties.forEach(bounty => bounty(this, null, HitTypeEnum.DESTROYED));
+                }
+                enemies.delete(id);
+            }));
+            enemyIdCounter++;
+        }
+    }
 }
 
 function createEnvironment() {
@@ -557,19 +584,13 @@ function update(elapsedTime: number) {
 function render(elapsedTime: number) {
     backContext.clearRect(0, 0, WIDTH, HEIGHT);
 
-    environments.forEach(value => {
-        value.render(backContext);
-    });
+    environments.forEach(value => value.render(backContext));
 
     player.render(backContext);
 
-    enemies.forEach(value => {
-        value.render(backContext)
-    });
+    enemies.forEach(value => value.render(backContext));
 
-    shots.forEach(value => {
-        value.render(backContext)
-    });
+    shots.forEach(value => value.render(backContext));
 }
 
 function updateStatus(scoreDelta: number, healthDelta: number = 0) {

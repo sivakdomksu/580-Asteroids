@@ -22,6 +22,8 @@ var DECELERATION_SPEED = 0.4;
 var KNOCK_BACK = 0.65;
 var MAX_SPEED = 8;
 var ENEMY_RADIUS = 20;
+var ENEMY_SPAWN_RATE = 1000;
+var ENEMY_SPAWN_PROBABILITY = 3;
 var DeathCauseEnum;
 (function (DeathCauseEnum) {
     DeathCauseEnum[DeathCauseEnum["OUT_OF_BOUNDS"] = 0] = "OUT_OF_BOUNDS";
@@ -45,6 +47,16 @@ var Boundary = /** @class */ (function () {
     };
     return Boundary;
 }());
+var NoBoundary = /** @class */ (function (_super) {
+    __extends(NoBoundary, _super);
+    function NoBoundary() {
+        return _super.call(this, 0, 0, 0, 0) || this;
+    }
+    NoBoundary.prototype.isInBounds = function (x, y, shape) {
+        return true;
+    };
+    return NoBoundary;
+}(Boundary));
 var Shape = /** @class */ (function () {
     function Shape(color, mass) {
         this.color = color;
@@ -60,9 +72,6 @@ var Rectangle = /** @class */ (function (_super) {
         _this.height = height;
         return _this;
     }
-    Rectangle.prototype.isInBounds = function (x, y, boundary) {
-        //TODO
-    };
     Rectangle.prototype.getHeight = function () {
         return this.height;
     };
@@ -82,8 +91,6 @@ var Circle = /** @class */ (function (_super) {
         _this.radius = radius;
         return _this;
     }
-    Circle.prototype.isInBounds = function (x, y, boundary) {
-    };
     Circle.prototype.getHeight = function () {
         return 2 * this.radius;
     };
@@ -91,6 +98,10 @@ var Circle = /** @class */ (function (_super) {
         return 2 * this.radius;
     };
     Circle.prototype.render = function (context) {
+        context.fillStyle = this.color;
+        context.beginPath();
+        context.arc(this.radius, this.radius, this.radius, 0, 2 * Math.PI);
+        context.fill();
     };
     return Circle;
 }(Shape));
@@ -135,7 +146,7 @@ var Move = /** @class */ (function () {
     }
     Move.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
         if (rotation === void 0) { rotation = 0; }
-        if (speed === void 0) { speed = 0; }
+        if (speed === void 0) { speed = null; }
         if (moveVector === void 0) { moveVector = null; }
         throw new Error("Not Implemented!");
     };
@@ -150,7 +161,7 @@ var ConstantMove = /** @class */ (function (_super) {
     }
     ConstantMove.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
         if (rotation === void 0) { rotation = 0; }
-        if (speed === void 0) { speed = 0; }
+        if (speed === void 0) { speed = null; }
         if (moveVector === void 0) { moveVector = null; }
         return vector_1.default.from(this.vector.x * elapsedTime, this.vector.y * elapsedTime);
     };
@@ -170,8 +181,15 @@ var DynamicMove = /** @class */ (function (_super) {
         _this.decSpeed = decSpeed;
         return _this;
     }
-    DynamicMove.prototype.move = function (elapsedTime, rotation, speed) {
-        return null;
+    DynamicMove.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
+        if (speed === void 0) { speed = null; }
+        if (moveVector === void 0) { moveVector = null; }
+        var vector = vector_1.default.fromOther(moveVector);
+        vector.scale(speed.dec === 0 ? 1 : speed.curr / (speed.curr + speed.dec));
+        if (speed.acc > 0) {
+            vector.add(vector_1.default.construct(speed.acc, rotation));
+        }
+        return vector;
     };
     DynamicMove.prototype.copy = function () {
         return new DynamicMove(this.decSpeed);
@@ -189,7 +207,7 @@ var ShapeEnum = {
     CLOUD: new Rectangle(150, 150, "#0a1e3a", 0)
 };
 var BoundaryEnum = {
-    NONE: new Boundary(Number.MIN_VALUE, Number.MIN_VALUE, Number.MAX_VALUE, Number.MAX_VALUE),
+    NONE: new NoBoundary(),
     SHOT: new Boundary(0, 0, WIDTH, HEIGHT),
     CLOUD: new Boundary(-ShapeEnum.CLOUD.width, -ShapeEnum.CLOUD.height, WIDTH + ShapeEnum.CLOUD.width, HEIGHT + ShapeEnum.CLOUD.height)
 };
@@ -226,6 +244,9 @@ var ShotTypeEnum = {
 };
 var UnitTypeEnum = {
     PLAYER: new UnitType(3, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
+    ASTEROID_S: new UnitType(1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+    ASTEROID_M: new UnitType(1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+    ASTEROID_L: new UnitType(1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
 };
 var EnvironmentTypeEnum = {
     CLOUD: new EnvironmentType(ShapeEnum.CLOUD, BoundaryEnum.CLOUD, MoveTypeEnum.CLOUD)
@@ -247,13 +268,27 @@ var GameObject = /** @class */ (function () {
         if (rotation === void 0) { rotation = 0; }
         if (movement === void 0) { movement = false; }
         var move = this.move.move(elapsedTime);
+        var old = vector_1.default.from(this.x, this.y);
         if (this.type.boundary.isInBounds(this.x + move.x, this.y + move.y, this.type.shape)) {
             this.x += move.x;
             this.y += move.y;
+            if (this.type.boundary instanceof NoBoundary) {
+                this.warpToOtherSide(old);
+            }
         }
         else if (this.type != UnitTypeEnum.PLAYER) {
             this.onDestroyed(DeathCauseEnum.OUT_OF_BOUNDS);
         }
+    };
+    GameObject.prototype.warpToOtherSide = function (old) {
+        if (this.x > WIDTH && !(old.x > WIDTH))
+            this.x = -this.getWidth();
+        else if (this.x - this.getWidth() < 0 && !(old.x - this.getWidth() < 0))
+            this.x = WIDTH;
+        if (this.y > HEIGHT && !(old.y > HEIGHT))
+            this.y = -this.getHeight();
+        else if (this.y - this.getHeight() < 0 && !(old.y - this.getHeight() < 0))
+            this.y = HEIGHT;
     };
     GameObject.prototype.isCollidingWith = function (other) {
         //TODO
@@ -349,17 +384,18 @@ var Player = /** @class */ (function (_super) {
         this.rotation = vector_1.mod(this.rotation + rotation * ROTATION_SPEED * elapsedTime, 360);
         var oldSpeed = this.speed;
         this.speed = Math.max(0, this.speed - (DECELERATION_SPEED * elapsedTime / 100));
-        this.moveVector.scale(oldSpeed === 0 ? 1 : this.speed / oldSpeed);
+        var decSpeed = oldSpeed - this.speed;
+        var accSpeed = 0;
         oldSpeed = this.speed;
         if (movement) {
             this.speed = Math.min(MAX_SPEED, this.speed + (ACC_SPEED * elapsedTime / 100));
-            this.moveVector.add(vector_1.default.construct(this.speed - oldSpeed, this.rotation));
+            accSpeed = this.speed - oldSpeed;
         }
-        else if (this.speed === 0) {
-            // this.moveVector = Vector.zero();
-        }
-        this.x = vector_1.mod(this.x + this.moveVector.x, WIDTH);
-        this.y = vector_1.mod(this.y + this.moveVector.y, HEIGHT);
+        this.moveVector = this.move.move(elapsedTime, this.rotation, { curr: oldSpeed, dec: decSpeed, acc: accSpeed });
+        var old = vector_1.default.from(this.x, this.y);
+        this.x += this.moveVector.x;
+        this.y += this.moveVector.y;
+        this.warpToOtherSide(old);
     };
     return Player;
 }(Unit));
@@ -372,7 +408,7 @@ var Shot = /** @class */ (function (_super) {
         return _this;
     }
     Shot.prototype.isCollidingWith = function (other) {
-        return !_super.prototype.isCollidingWith.call(this, other) && this.initiator !== other.type;
+        return _super.prototype.isCollidingWith.call(this, other) && this.initiator !== other.type;
     };
     return Shot;
 }(GameObject));
@@ -484,35 +520,30 @@ function handleKeyup(event) {
 }
 window.addEventListener('keyup', handleKeyup);
 function createEnemy(elapsedTime) {
-    // enemyTimeToSpawn += elapsedTime;
-    // if (enemyTimeToSpawn > ENEMY_SPAWN_RATE) {
-    //     enemyTimeToSpawn = 0;
-    //     if (Math.random() * ENEMY_SPAWN_PROBABILITY < 1) {
-    //         let id = enemyIdCounter;
-    //         let type = UnitTypeEnum.ENEMY;
-    //         switch (Math.floor(Math.random() * 20)) {
-    //             case 0:
-    //             case 2:
-    //                 type = UnitTypeEnum.HEALTH_ENEMY;
-    //                 break;
-    //             case 1:
-    //                 type = UnitTypeEnum.BIG_ONE;
-    //                 break;
-    //             case 3:
-    //                 type = UnitTypeEnum.FAST_ONE;
-    //                 break;
-    //         }
-    //         enemies.set(id, new Unit(id, type, Math.random() * (WIDTH - ShapeEnum.ENEMY.width), -ShapeEnum.ENEMY.height, function (cause: DeathCauseEnum) {
-    //             if (cause == DeathCauseEnum.OUT_OF_BOUNDS) {
-    //                 player.onHit(this);
-    //             } else if (cause == DeathCauseEnum.LIVES) {
-    //                 this.type.bounties.forEach(bounty => bounty(this, null, HitTypeEnum.DESTROYED));
-    //             }
-    //             enemies.delete(id);
-    //         }));
-    //         enemyIdCounter++;
-    //     }
-    // }
+    enemyTimeToSpawn += elapsedTime;
+    if (enemyTimeToSpawn > ENEMY_SPAWN_RATE) {
+        enemyTimeToSpawn = 0;
+        if (Math.random() * ENEMY_SPAWN_PROBABILITY < 1) {
+            var id_1 = enemyIdCounter;
+            var type = UnitTypeEnum.ASTEROID_M;
+            switch (Math.floor(Math.random() * 10)) {
+                case 0:
+                    type = UnitTypeEnum.ASTEROID_L;
+                    break;
+                case 1:
+                    type = UnitTypeEnum.ASTEROID_S;
+                    break;
+            }
+            enemies.set(id_1, new Unit(id_1, type, Math.random() * (WIDTH - type.shape.getWidth()), -type.shape.getHeight(), Math.random() * 360, function (cause) {
+                var _this = this;
+                if (cause == DeathCauseEnum.LIVES) {
+                    this.type.bounties.forEach(function (bounty) { return bounty(_this, null, HitTypeEnum.DESTROYED); });
+                }
+                enemies.delete(id_1);
+            }));
+            enemyIdCounter++;
+        }
+    }
 }
 function createEnvironment() {
     switch (Math.floor(Math.random() * 100)) {
@@ -547,16 +578,10 @@ function update(elapsedTime) {
 }
 function render(elapsedTime) {
     backContext.clearRect(0, 0, WIDTH, HEIGHT);
-    environments.forEach(function (value) {
-        value.render(backContext);
-    });
+    environments.forEach(function (value) { return value.render(backContext); });
     player.render(backContext);
-    enemies.forEach(function (value) {
-        value.render(backContext);
-    });
-    shots.forEach(function (value) {
-        value.render(backContext);
-    });
+    enemies.forEach(function (value) { return value.render(backContext); });
+    shots.forEach(function (value) { return value.render(backContext); });
 }
 function updateStatus(scoreDelta, healthDelta) {
     if (healthDelta === void 0) { healthDelta = 0; }

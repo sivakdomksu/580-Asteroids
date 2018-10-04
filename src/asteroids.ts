@@ -5,14 +5,17 @@ const HEIGHT = 600;
 const ROTATION_SPEED = 0.2;
 const ACC_SPEED = 1;
 const DECELERATION_SPEED = 0.4;
+const KNOCK_BACK = 0.65;
 const MAX_SPEED = 8;
+const ENEMY_RADIUS = 20;
 
 //region GameObject parts
 type BountyCallback = (enemy: Unit, shot: Shot, type: HitTypeEnum) => any;
 
 enum DeathCauseEnum {
     OUT_OF_BOUNDS,
-    LIVES
+    LIVES,
+    COLLISION
 }
 
 enum HitTypeEnum {
@@ -36,6 +39,8 @@ abstract class Shape {
     public abstract getWidth(): number;
 
     public abstract getHeight(): number;
+
+    public abstract render(context: CanvasRenderingContext2D);
 }
 
 class Rectangle extends Shape {
@@ -54,6 +59,11 @@ class Rectangle extends Shape {
     getWidth(): number {
         return this.width
     }
+
+    render(context: CanvasRenderingContext2D) {
+        context.fillStyle = this.color;
+        context.fillRect(0, 0, this.width, this.height);
+    }
 }
 
 class Circle extends Shape {
@@ -71,6 +81,9 @@ class Circle extends Shape {
 
     getWidth(): number {
         return 2 * this.radius;
+    }
+
+    render(context: CanvasRenderingContext2D) {
     }
 }
 
@@ -153,11 +166,10 @@ class DynamicMove extends Move {
 
 const ShapeEnum = {
     PLAYER: new Rectangle(20, 35, "#6a7fed", 0),
-    ENEMY: new Rectangle(45, 50, "#ff0000", 0),
+    ASTEROID_S: new Circle(ENEMY_RADIUS, "#ff2766", 0),
+    ASTEROID_M: new Circle(2 * ENEMY_RADIUS, "#bb2c5b", 0),
+    ASTEROID_L: new Circle(4 * ENEMY_RADIUS, "#a3163e", 0),
     SHOT: new Rectangle(5, 5, "#ffffff", 0),
-    HEALTH_ENEMY: new Rectangle(45, 50, "#91ff6f", 0),
-    BIG_ONE: new Rectangle(60, 60, "#ffbb00", 0),
-    FAST_ONE: new Rectangle(40, 40, "#f5a3ff", 0),
     CLOUD: new Rectangle(150, 150, "#0a1e3a", 0)
 };
 
@@ -240,6 +252,15 @@ abstract class GameObject {
         return false;
     }
 
+    public render(context: CanvasRenderingContext2D) {
+        context.save();
+        context.translate(this.x + 0.5 * this.getWidth(), this.y + 0.5 * player.getHeight());
+        context.rotate(rad(this.rotation));
+        context.translate(-0.5 * this.getWidth(), -0.5 * this.getHeight());
+        this.type.shape.render(context);
+        context.restore();
+    }
+
     //region Helper Methods
     public getWidth(): number {
         return this.type.shape.getWidth()
@@ -306,8 +327,8 @@ class Unit extends GameObject {
         let shot = new Shot(id, this.type, this.type.shot, this.x + this.getWidth() / 2, this.y + this.getHeight() / 2, this.rotation, (cause: DeathCauseEnum) => {
             shots.delete(id);
         });
-        this.moveVector.add(Vector.construct(0.65, this.rotation).scale(-1));
-        this.speed = Math.min(MAX_SPEED, this.speed + (0.65));
+        this.moveVector.add(Vector.construct(KNOCK_BACK, this.rotation).scale(-1));
+        this.speed = Math.min(MAX_SPEED, this.speed + (KNOCK_BACK));
         shots.set(id, shot);
         shotIdCounter++;
         return shot;
@@ -325,7 +346,6 @@ class Player extends Unit {
         this.speed = Math.max(0, this.speed - (DECELERATION_SPEED * elapsedTime / 100));
         this.moveVector.scale(oldSpeed === 0 ? 1 : this.speed / oldSpeed);
         oldSpeed = this.speed;
-        console.log("Speed: ", this.speed);
         if (movement) {
             this.speed = Math.min(MAX_SPEED, this.speed + (ACC_SPEED * elapsedTime / 100));
             this.moveVector.add(Vector.construct(this.speed - oldSpeed, this.rotation));
@@ -527,7 +547,7 @@ function update(elapsedTime: number) {
         enemies.forEach(enemy => {
             if (shot.isCollidingWith(enemy)) {
                 enemy.onHit(shot);
-                shot.onDestroyed();
+                shot.onDestroyed(DeathCauseEnum.COLLISION);
             }
         })
     });
@@ -538,26 +558,17 @@ function render(elapsedTime: number) {
     backContext.clearRect(0, 0, WIDTH, HEIGHT);
 
     environments.forEach(value => {
-        backContext.fillStyle = value.getColor();
-        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
+        value.render(backContext);
     });
 
-    backContext.save();
-    backContext.fillStyle = player.getColor();
-    backContext.translate(player.x + 0.5 * player.getWidth(), player.y + 0.5 * player.getHeight());
-    backContext.rotate(rad(player.rotation));
-    backContext.translate(-(player.x + 0.5 * player.getWidth()), -(player.y + 0.5 * player.getHeight()));
-    backContext.fillRect(player.x, player.y, player.getWidth(), player.getHeight());
-    backContext.restore();
+    player.render(backContext);
 
     enemies.forEach(value => {
-        backContext.fillStyle = value.getColor();
-        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
+        value.render(backContext)
     });
 
     shots.forEach(value => {
-        backContext.fillStyle = value.getColor();
-        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
+        value.render(backContext)
     });
 }
 

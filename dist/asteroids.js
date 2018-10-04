@@ -19,11 +19,14 @@ var HEIGHT = 600;
 var ROTATION_SPEED = 0.2;
 var ACC_SPEED = 1;
 var DECELERATION_SPEED = 0.4;
+var KNOCK_BACK = 0.65;
 var MAX_SPEED = 8;
+var ENEMY_RADIUS = 20;
 var DeathCauseEnum;
 (function (DeathCauseEnum) {
     DeathCauseEnum[DeathCauseEnum["OUT_OF_BOUNDS"] = 0] = "OUT_OF_BOUNDS";
     DeathCauseEnum[DeathCauseEnum["LIVES"] = 1] = "LIVES";
+    DeathCauseEnum[DeathCauseEnum["COLLISION"] = 2] = "COLLISION";
 })(DeathCauseEnum || (DeathCauseEnum = {}));
 var HitTypeEnum;
 (function (HitTypeEnum) {
@@ -66,6 +69,10 @@ var Rectangle = /** @class */ (function (_super) {
     Rectangle.prototype.getWidth = function () {
         return this.width;
     };
+    Rectangle.prototype.render = function (context) {
+        context.fillStyle = this.color;
+        context.fillRect(0, 0, this.width, this.height);
+    };
     return Rectangle;
 }(Shape));
 var Circle = /** @class */ (function (_super) {
@@ -82,6 +89,8 @@ var Circle = /** @class */ (function (_super) {
     };
     Circle.prototype.getWidth = function () {
         return 2 * this.radius;
+    };
+    Circle.prototype.render = function (context) {
     };
     return Circle;
 }(Shape));
@@ -173,11 +182,10 @@ var DynamicMove = /** @class */ (function (_super) {
 }(Move));
 var ShapeEnum = {
     PLAYER: new Rectangle(20, 35, "#6a7fed", 0),
-    ENEMY: new Rectangle(45, 50, "#ff0000", 0),
+    ASTEROID_S: new Circle(ENEMY_RADIUS, "#ff2766", 0),
+    ASTEROID_M: new Circle(2 * ENEMY_RADIUS, "#bb2c5b", 0),
+    ASTEROID_L: new Circle(4 * ENEMY_RADIUS, "#a3163e", 0),
     SHOT: new Rectangle(5, 5, "#ffffff", 0),
-    HEALTH_ENEMY: new Rectangle(45, 50, "#91ff6f", 0),
-    BIG_ONE: new Rectangle(60, 60, "#ffbb00", 0),
-    FAST_ONE: new Rectangle(40, 40, "#f5a3ff", 0),
     CLOUD: new Rectangle(150, 150, "#0a1e3a", 0)
 };
 var BoundaryEnum = {
@@ -251,6 +259,14 @@ var GameObject = /** @class */ (function () {
         //TODO
         return false;
     };
+    GameObject.prototype.render = function (context) {
+        context.save();
+        context.translate(this.x + 0.5 * this.getWidth(), this.y + 0.5 * player.getHeight());
+        context.rotate(vector_1.rad(this.rotation));
+        context.translate(-0.5 * this.getWidth(), -0.5 * this.getHeight());
+        this.type.shape.render(context);
+        context.restore();
+    };
     //region Helper Methods
     GameObject.prototype.getWidth = function () {
         return this.type.shape.getWidth();
@@ -312,8 +328,8 @@ var Unit = /** @class */ (function (_super) {
         var shot = new Shot(id, this.type, this.type.shot, this.x + this.getWidth() / 2, this.y + this.getHeight() / 2, this.rotation, function (cause) {
             shots.delete(id);
         });
-        this.moveVector.add(vector_1.default.construct(0.65, this.rotation).scale(-1));
-        this.speed = Math.min(MAX_SPEED, this.speed + (0.65));
+        this.moveVector.add(vector_1.default.construct(KNOCK_BACK, this.rotation).scale(-1));
+        this.speed = Math.min(MAX_SPEED, this.speed + (KNOCK_BACK));
         shots.set(id, shot);
         shotIdCounter++;
         return shot;
@@ -335,7 +351,6 @@ var Player = /** @class */ (function (_super) {
         this.speed = Math.max(0, this.speed - (DECELERATION_SPEED * elapsedTime / 100));
         this.moveVector.scale(oldSpeed === 0 ? 1 : this.speed / oldSpeed);
         oldSpeed = this.speed;
-        console.log("Speed: ", this.speed);
         if (movement) {
             this.speed = Math.min(MAX_SPEED, this.speed + (ACC_SPEED * elapsedTime / 100));
             this.moveVector.add(vector_1.default.construct(this.speed - oldSpeed, this.rotation));
@@ -524,7 +539,7 @@ function update(elapsedTime) {
         enemies.forEach(function (enemy) {
             if (shot.isCollidingWith(enemy)) {
                 enemy.onHit(shot);
-                shot.onDestroyed();
+                shot.onDestroyed(DeathCauseEnum.COLLISION);
             }
         });
     });
@@ -533,23 +548,14 @@ function update(elapsedTime) {
 function render(elapsedTime) {
     backContext.clearRect(0, 0, WIDTH, HEIGHT);
     environments.forEach(function (value) {
-        backContext.fillStyle = value.getColor();
-        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
+        value.render(backContext);
     });
-    backContext.save();
-    backContext.fillStyle = player.getColor();
-    backContext.translate(player.x + 0.5 * player.getWidth(), player.y + 0.5 * player.getHeight());
-    backContext.rotate(vector_1.rad(player.rotation));
-    backContext.translate(-(player.x + 0.5 * player.getWidth()), -(player.y + 0.5 * player.getHeight()));
-    backContext.fillRect(player.x, player.y, player.getWidth(), player.getHeight());
-    backContext.restore();
+    player.render(backContext);
     enemies.forEach(function (value) {
-        backContext.fillStyle = value.getColor();
-        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
+        value.render(backContext);
     });
     shots.forEach(function (value) {
-        backContext.fillStyle = value.getColor();
-        backContext.fillRect(value.x, value.y, value.getWidth(), value.getHeight());
+        value.render(backContext);
     });
 }
 function updateStatus(scoreDelta, healthDelta) {

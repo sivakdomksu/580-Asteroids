@@ -24,6 +24,7 @@ var MAX_SPEED = 8;
 var ENEMY_RADIUS = 20;
 var ENEMY_SPAWN_RATE = 1000;
 var ENEMY_SPAWN_PROBABILITY = 3;
+var ENEMY_LIMIT = 10;
 var DeathCauseEnum;
 (function (DeathCauseEnum) {
     DeathCauseEnum[DeathCauseEnum["OUT_OF_BOUNDS"] = 0] = "OUT_OF_BOUNDS";
@@ -308,12 +309,16 @@ var GameObject = /** @class */ (function () {
     GameObject.prototype.warpToOtherSide = function (old) {
         if (this.x > WIDTH && !(old.x > WIDTH))
             this.x = -this.getWidth();
-        else if (this.x - this.getWidth() < 0 && !(old.x - this.getWidth() < 0))
+        else if (this.x + this.getWidth() < 0 && !(old.x + this.getWidth() < 0)) {
+            console.log("Warping 2", old, this.x, this.y);
             this.x = WIDTH;
+        }
         if (this.y > HEIGHT && !(old.y > HEIGHT))
             this.y = -this.getHeight();
-        else if (this.y - this.getHeight() < 0 && !(old.y - this.getHeight() < 0))
+        else if (this.y + this.getHeight() < 0 && !(old.y + this.getHeight() < 0)) {
+            console.log("Warping 4", old, this.x, this.y);
             this.y = HEIGHT;
+        }
     };
     GameObject.prototype.isCollidingWith = function (other) {
         //TODO
@@ -551,7 +556,7 @@ function handleKeyup(event) {
 window.addEventListener('keyup', handleKeyup);
 function createEnemy(elapsedTime) {
     enemyTimeToSpawn += elapsedTime;
-    if (enemyTimeToSpawn > ENEMY_SPAWN_RATE) {
+    if (enemyTimeToSpawn > ENEMY_SPAWN_RATE && enemies.size <= ENEMY_LIMIT) {
         enemyTimeToSpawn = 0;
         if (Math.random() * ENEMY_SPAWN_PROBABILITY < 1) {
             var id_1 = enemyIdCounter;

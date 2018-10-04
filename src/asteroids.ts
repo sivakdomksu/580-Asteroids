@@ -10,6 +10,7 @@ const MAX_SPEED = 8;
 const ENEMY_RADIUS = 20;
 const ENEMY_SPAWN_RATE = 1000;
 const ENEMY_SPAWN_PROBABILITY = 3;
+const ENEMY_LIMIT = 10;
 
 //region GameObject parts
 type BountyCallback = (enemy: Unit, shot: Shot, type: HitTypeEnum) => any;
@@ -298,12 +299,16 @@ abstract class GameObject {
     protected warpToOtherSide(old: Vector) {
         if (this.x > WIDTH && !(old.x > WIDTH))
             this.x = -this.getWidth();
-        else if (this.x - this.getWidth() < 0 && !(old.x - this.getWidth() < 0))
+        else if (this.x + this.getWidth() < 0 && !(old.x + this.getWidth() < 0)) {
+            console.log("Warping 2", old, this.x, this.y);
             this.x = WIDTH;
+        }
         if (this.y > HEIGHT && !(old.y > HEIGHT))
             this.y = -this.getHeight();
-        else if (this.y - this.getHeight() < 0 && !(old.y - this.getHeight() < 0))
+        else if (this.y + this.getHeight() < 0 && !(old.y + this.getHeight() < 0)) {
+            console.log("Warping 4", old, this.x, this.y);
             this.y = HEIGHT;
+        }
     }
 
     isCollidingWith(other: GameObject): boolean {
@@ -555,7 +560,7 @@ window.addEventListener('keyup', handleKeyup);
 
 function createEnemy(elapsedTime: number) {
     enemyTimeToSpawn += elapsedTime;
-    if (enemyTimeToSpawn > ENEMY_SPAWN_RATE) {
+    if (enemyTimeToSpawn > ENEMY_SPAWN_RATE && enemies.size <= ENEMY_LIMIT) {
         enemyTimeToSpawn = 0;
         if (Math.random() * ENEMY_SPAWN_PROBABILITY < 1) {
             let id = enemyIdCounter;

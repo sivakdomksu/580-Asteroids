@@ -131,7 +131,7 @@ abstract class Move {
 
     abstract copy(): Move;
 
-    abstract setRotation(rotation: number);
+    abstract setRotation(rotation: number): Move;
 }
 
 class ConstantMove extends Move {
@@ -159,7 +159,7 @@ class DynamicMove extends Move {
         super();
     }
 
-    move(elapsedTime: number, rotation: number, speed: SpeedStruct = null, moveVector: Vector = null): Vector {
+    move(elapsedTime: number, rotation: number, speed: SpeedStruct, moveVector: Vector): Vector {
         let vector = Vector.fromOther(moveVector);
         vector.scale(speed.dec === 0 ? 1 : speed.curr / (speed.curr + speed.dec));
         if (speed.acc > 0) {
@@ -173,7 +173,31 @@ class DynamicMove extends Move {
         return new DynamicMove(this.decSpeed);
     }
 
-    setRotation(rotation: number) {
+    setRotation(rotation: number): Move {
+        return this;
+    }
+}
+
+class AudioPool {
+    private q: HTMLAudioElement[] = [];
+
+    constructor(private url: string, count: number) {
+        for (let i = 0; i < count; i++) {
+            this.q.push(new Audio(url));
+        }
+    }
+
+    public play() {
+        let audio = this.q.pop();
+        if (!audio) {
+            console.log("Audio Pool is not big enough!", this.url);
+            return;
+        }
+        audio.load();
+        audio.addEventListener("ended", () => {
+            this.q.push(audio);
+        });
+        audio.play();
     }
 }
 
@@ -235,6 +259,10 @@ const UnitTypeEnum = {
 
 const EnvironmentTypeEnum = {
     CLOUD: new EnvironmentType(ShapeEnum.CLOUD, BoundaryEnum.CLOUD, MoveTypeEnum.CLOUD)
+};
+
+const AudioPoolEnum = {
+    PLAYER_SHOT: new AudioPool("audio/player_shot.wav", 5),
 };
 
 //endregion
@@ -362,6 +390,7 @@ class Unit extends GameObject {
         this.speed = Math.min(MAX_SPEED, this.speed + (KNOCK_BACK));
         shots.set(id, shot);
         shotIdCounter++;
+        AudioPoolEnum.PLAYER_SHOT.play();
         return shot;
     }
 }
@@ -382,7 +411,11 @@ class Player extends Unit {
             this.speed = Math.min(MAX_SPEED, this.speed + (ACC_SPEED * elapsedTime / 100));
             accSpeed = this.speed - oldSpeed;
         }
-        this.moveVector = this.move.move(elapsedTime, this.rotation, {curr: oldSpeed, dec: decSpeed, acc: accSpeed});
+        this.moveVector = this.move.move(elapsedTime, this.rotation, {
+            curr: oldSpeed,
+            dec: decSpeed,
+            acc: accSpeed
+        }, this.moveVector);
 
         let old = Vector.from(this.x, this.y);
         this.x += this.moveVector.x;

@@ -182,8 +182,6 @@ var DynamicMove = /** @class */ (function (_super) {
         return _this;
     }
     DynamicMove.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
-        if (speed === void 0) { speed = null; }
-        if (moveVector === void 0) { moveVector = null; }
         var vector = vector_1.default.fromOther(moveVector);
         vector.scale(speed.dec === 0 ? 1 : speed.curr / (speed.curr + speed.dec));
         if (speed.acc > 0) {
@@ -195,9 +193,33 @@ var DynamicMove = /** @class */ (function (_super) {
         return new DynamicMove(this.decSpeed);
     };
     DynamicMove.prototype.setRotation = function (rotation) {
+        return this;
     };
     return DynamicMove;
 }(Move));
+var AudioPool = /** @class */ (function () {
+    function AudioPool(url, count) {
+        this.url = url;
+        this.q = [];
+        for (var i = 0; i < count; i++) {
+            this.q.push(new Audio(url));
+        }
+    }
+    AudioPool.prototype.play = function () {
+        var _this = this;
+        var audio = this.q.pop();
+        if (!audio) {
+            console.log("Audio Pool is not big enough!", this.url);
+            return;
+        }
+        audio.load();
+        audio.addEventListener("ended", function () {
+            _this.q.push(audio);
+        });
+        audio.play();
+    };
+    return AudioPool;
+}());
 var ShapeEnum = {
     PLAYER: new Rectangle(20, 35, "#6a7fed", 0),
     ASTEROID_S: new Circle(ENEMY_RADIUS, "#ff2766", 0),
@@ -250,6 +272,9 @@ var UnitTypeEnum = {
 };
 var EnvironmentTypeEnum = {
     CLOUD: new EnvironmentType(ShapeEnum.CLOUD, BoundaryEnum.CLOUD, MoveTypeEnum.CLOUD)
+};
+var AudioPoolEnum = {
+    PLAYER_SHOT: new AudioPool("audio/player_shot.wav", 5),
 };
 var GameObject = /** @class */ (function () {
     function GameObject(id, type, x, y, rot, onDestroyed) {
@@ -367,6 +392,7 @@ var Unit = /** @class */ (function (_super) {
         this.speed = Math.min(MAX_SPEED, this.speed + (KNOCK_BACK));
         shots.set(id, shot);
         shotIdCounter++;
+        AudioPoolEnum.PLAYER_SHOT.play();
         return shot;
     };
     return Unit;
@@ -391,7 +417,11 @@ var Player = /** @class */ (function (_super) {
             this.speed = Math.min(MAX_SPEED, this.speed + (ACC_SPEED * elapsedTime / 100));
             accSpeed = this.speed - oldSpeed;
         }
-        this.moveVector = this.move.move(elapsedTime, this.rotation, { curr: oldSpeed, dec: decSpeed, acc: accSpeed });
+        this.moveVector = this.move.move(elapsedTime, this.rotation, {
+            curr: oldSpeed,
+            dec: decSpeed,
+            acc: accSpeed
+        }, this.moveVector);
         var old = vector_1.default.from(this.x, this.y);
         this.x += this.moveVector.x;
         this.y += this.moveVector.y;

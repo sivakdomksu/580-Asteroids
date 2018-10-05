@@ -1,30 +1,17 @@
 "use strict";
-var __extends = (this && this.__extends) || (function () {
-    var extendStatics = function (d, b) {
-        extendStatics = Object.setPrototypeOf ||
-            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-            function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
-        return extendStatics(d, b);
-    }
-    return function (d, b) {
-        extendStatics(d, b);
-        function __() { this.constructor = d; }
-        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
-var vector_1 = require("./vector");
-var WIDTH = 800;
-var HEIGHT = 600;
-var ROTATION_SPEED = 0.2;
-var ACC_SPEED = 1;
-var DECELERATION_SPEED = 0.4;
-var KNOCK_BACK = 0.65;
-var MAX_SPEED = 8;
-var ENEMY_RADIUS = 20;
-var ENEMY_SPAWN_RATE = 1000;
-var ENEMY_SPAWN_PROBABILITY = 3;
-var ENEMY_LIMIT = 10;
+const vector_1 = require("./vector");
+const WIDTH = 800;
+const HEIGHT = 600;
+const ROTATION_SPEED = 0.2;
+const ACC_SPEED = 1;
+const DECELERATION_SPEED = 0.4;
+const KNOCK_BACK = 0.65;
+const MAX_SPEED = 8;
+const ENEMY_RADIUS = 20;
+const ENEMY_SPAWN_RATE = 1000;
+const ENEMY_SPAWN_PROBABILITY = 3;
+const ENEMY_LIMIT = 10;
 var DeathCauseEnum;
 (function (DeathCauseEnum) {
     DeathCauseEnum[DeathCauseEnum["OUT_OF_BOUNDS"] = 0] = "OUT_OF_BOUNDS";
@@ -36,249 +23,278 @@ var HitTypeEnum;
     HitTypeEnum[HitTypeEnum["HIT"] = 0] = "HIT";
     HitTypeEnum[HitTypeEnum["DESTROYED"] = 1] = "DESTROYED";
 })(HitTypeEnum || (HitTypeEnum = {}));
-var Boundary = /** @class */ (function () {
-    function Boundary(minX, minY, maxX, maxY) {
+var Role;
+(function (Role) {
+    Role[Role["PLAYER"] = 0] = "PLAYER";
+    Role[Role["ENEMY"] = 1] = "ENEMY";
+})(Role || (Role = {}));
+class Boundary {
+    constructor(minX, minY, maxX, maxY) {
         this.minX = minX;
         this.minY = minY;
         this.maxX = maxX;
         this.maxY = maxY;
     }
-    Boundary.prototype.isInBounds = function (x, y, shape) {
+    isInBounds(x, y, shape) {
         return x >= this.minX && y >= this.minY && (x + shape.getWidth()) <= this.maxX && (y + shape.getHeight()) <= this.maxY;
-    };
-    return Boundary;
-}());
-var NoBoundary = /** @class */ (function (_super) {
-    __extends(NoBoundary, _super);
-    function NoBoundary() {
-        return _super.call(this, 0, 0, 0, 0) || this;
     }
-    NoBoundary.prototype.isInBounds = function (x, y, shape) {
+}
+class NoBoundary extends Boundary {
+    constructor() {
+        super(0, 0, 0, 0);
+    }
+    isInBounds(x, y, shape) {
         return true;
-    };
-    return NoBoundary;
-}(Boundary));
-var Shape = /** @class */ (function () {
-    function Shape(color, mass) {
+    }
+}
+class Shape {
+    constructor(color, mass) {
         this.color = color;
         this.mass = mass;
     }
-    return Shape;
-}());
-var Rectangle = /** @class */ (function (_super) {
-    __extends(Rectangle, _super);
-    function Rectangle(width, height, color, mass) {
-        var _this = _super.call(this, color, mass) || this;
-        _this.width = width;
-        _this.height = height;
-        return _this;
+    isCollidingWith(pos, other, otherPos) {
+        if (other instanceof Rectangle) {
+            return this.isCollidingWithRectangle(pos, other, otherPos);
+        }
+        else if (other instanceof Circle) {
+            return this.isCollidingWithCircle(pos, other, otherPos);
+        }
+        else {
+            throw new Error("Unknown shape type: " + other);
+        }
     }
-    Rectangle.prototype.getHeight = function () {
+}
+class Rectangle extends Shape {
+    constructor(width, height, color, mass) {
+        super(color, mass);
+        this.width = width;
+        this.height = height;
+    }
+    getHeight() {
         return this.height;
-    };
-    Rectangle.prototype.getWidth = function () {
+    }
+    getWidth() {
         return this.width;
-    };
-    Rectangle.prototype.render = function (context) {
+    }
+    render(context) {
         context.fillStyle = this.color;
         context.fillRect(0, 0, this.width, this.height);
-    };
-    return Rectangle;
-}(Shape));
-var Circle = /** @class */ (function (_super) {
-    __extends(Circle, _super);
-    function Circle(radius, color, mass) {
-        var _this = _super.call(this, color, mass) || this;
-        _this.radius = radius;
-        return _this;
     }
-    Circle.prototype.getHeight = function () {
+    isCollidingWithCircle(pos, other, otherPos) {
+        return other.isCollidingWithRectangle(otherPos, this, pos);
+    }
+    isCollidingWithRectangle(pos, other, otherPos) {
+        return pos.x < otherPos.x + other.getWidth() &&
+            pos.x + this.getWidth() > otherPos.x &&
+            pos.y < otherPos.y + other.getHeight() &&
+            pos.y + this.getHeight() > otherPos.y;
+    }
+}
+class CharRectangle extends Rectangle {
+    constructor(width, height, color, mass, char) {
+        super(width, height, color, mass);
+        this.char = char;
+        this.char = this.char.charAt(0);
+    }
+    render(context) {
+        super.render(context);
+        context.font = "20px Arial";
+        context.fillStyle = "#ffffff";
+        let txtWidth = context.measureText(this.char).width;
+        context.fillText(this.char, 0.5 * this.width - 0.5 * txtWidth, 0.5 * this.height + 0.5 * 20);
+    }
+}
+class Circle extends Shape {
+    constructor(radius, color, mass) {
+        super(color, mass);
+        this.radius = radius;
+    }
+    getHeight() {
         return 2 * this.radius;
-    };
-    Circle.prototype.getWidth = function () {
+    }
+    getWidth() {
         return 2 * this.radius;
-    };
-    Circle.prototype.render = function (context) {
+    }
+    render(context) {
         context.fillStyle = this.color;
+        context.strokeStyle = "#fff";
+        context.strokeRect(0, 0, 2 * this.radius, 2 * this.radius);
         context.beginPath();
         context.arc(this.radius, this.radius, this.radius, 0, 2 * Math.PI);
         context.fill();
-    };
-    return Circle;
-}(Shape));
-var GameObjectType = /** @class */ (function () {
-    function GameObjectType(shape, boundary, move) {
+    }
+    isCollidingWithRectangle(pos, other, otherPos) {
+        let closestX = vector_1.clamp(pos.x, otherPos.x, otherPos.x + other.getWidth());
+        let closestY = vector_1.clamp(pos.y, otherPos.y, otherPos.y + other.getHeight());
+        let distanceX = pos.x - closestX;
+        let distanceY = pos.y - closestY;
+        let distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+        return distanceSquared < (this.radius * this.radius);
+    }
+    isCollidingWithCircle(pos, other, otherPos) {
+        return Math.pow((otherPos.x + 0.5 * other.getWidth()) - (pos.x + 0.5 * this.getWidth()), 2)
+            + Math.pow((pos.y + 0.5 * this.getHeight()) - (otherPos.y + 0.5 * other.getHeight()), 2)
+            < Math.pow(this.radius + other.radius, 2);
+    }
+}
+class GameObjectType {
+    constructor(shape, boundary, move) {
         this.shape = shape;
         this.boundary = boundary;
         this.move = move;
     }
-    return GameObjectType;
-}());
-var UnitType = /** @class */ (function (_super) {
-    __extends(UnitType, _super);
-    function UnitType(lives, shotFreq, shape, boundary, move, shot, bounties) {
-        var _this = _super.call(this, shape, boundary, move) || this;
-        _this.lives = lives;
-        _this.shotFreq = shotFreq;
-        _this.shot = shot;
-        _this.bounties = bounties;
-        return _this;
+}
+class UnitType extends GameObjectType {
+    constructor(role, lives, shotFreq, shape, boundary, move, shot, bounties) {
+        super(shape, boundary, move);
+        this.role = role;
+        this.lives = lives;
+        this.shotFreq = shotFreq;
+        this.shot = shot;
+        this.bounties = bounties;
     }
-    return UnitType;
-}(GameObjectType));
-var ShotType = /** @class */ (function (_super) {
-    __extends(ShotType, _super);
-    function ShotType(dmg, shape, boundary, move) {
-        var _this = _super.call(this, shape, boundary, move) || this;
-        _this.dmg = dmg;
-        return _this;
+}
+class ShotType extends GameObjectType {
+    constructor(dmg, shape, boundary, move) {
+        super(shape, boundary, move);
+        this.dmg = dmg;
     }
-    return ShotType;
-}(GameObjectType));
-var EnvironmentType = /** @class */ (function (_super) {
-    __extends(EnvironmentType, _super);
-    function EnvironmentType(shape, boundary, move) {
-        return _super.call(this, shape, boundary, move) || this;
+}
+class EnvironmentType extends GameObjectType {
+    constructor(shape, boundary, move) {
+        super(shape, boundary, move);
     }
-    return EnvironmentType;
-}(GameObjectType));
-var Move = /** @class */ (function () {
-    function Move() {
+}
+class Move {
+    constructor() {
     }
-    Move.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
-        if (rotation === void 0) { rotation = 0; }
-        if (speed === void 0) { speed = null; }
-        if (moveVector === void 0) { moveVector = null; }
+    move(elapsedTime, rotation = 0, speed = null, moveVector = null) {
         throw new Error("Not Implemented!");
-    };
-    return Move;
-}());
-var ConstantMove = /** @class */ (function (_super) {
-    __extends(ConstantMove, _super);
-    function ConstantMove(vector) {
-        var _this = _super.call(this) || this;
-        _this.vector = vector;
-        return _this;
     }
-    ConstantMove.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
-        if (rotation === void 0) { rotation = 0; }
-        if (speed === void 0) { speed = null; }
-        if (moveVector === void 0) { moveVector = null; }
+}
+class ConstantMove extends Move {
+    constructor(vector) {
+        super();
+        this.vector = vector;
+    }
+    move(elapsedTime, rotation = 0, speed = null, moveVector = null) {
         return vector_1.default.from(this.vector.x * elapsedTime, this.vector.y * elapsedTime);
-    };
-    ConstantMove.prototype.copy = function () {
+    }
+    copy() {
         return new ConstantMove(vector_1.default.fromOther(this.vector));
-    };
-    ConstantMove.prototype.setRotation = function (rotation) {
+    }
+    setRotation(rotation) {
         this.vector.rotate(rotation);
         return this;
-    };
-    return ConstantMove;
-}(Move));
-var DynamicMove = /** @class */ (function (_super) {
-    __extends(DynamicMove, _super);
-    function DynamicMove(decSpeed) {
-        var _this = _super.call(this) || this;
-        _this.decSpeed = decSpeed;
-        return _this;
     }
-    DynamicMove.prototype.move = function (elapsedTime, rotation, speed, moveVector) {
-        var vector = vector_1.default.fromOther(moveVector);
+    getVector() {
+        return this.vector;
+    }
+}
+class DynamicMove extends Move {
+    constructor(decSpeed) {
+        super();
+        this.decSpeed = decSpeed;
+        this.lastVector = vector_1.default.zero();
+    }
+    move(elapsedTime, rotation, speed, moveVector) {
+        let vector = vector_1.default.fromOther(moveVector);
         vector.scale(speed.dec === 0 ? 1 : speed.curr / (speed.curr + speed.dec));
         if (speed.acc > 0) {
             vector.add(vector_1.default.construct(speed.acc, rotation));
         }
+        this.lastVector = vector_1.default.fromOther(vector).scale(1 / elapsedTime);
         return vector;
-    };
-    DynamicMove.prototype.copy = function () {
+    }
+    copy() {
         return new DynamicMove(this.decSpeed);
-    };
-    DynamicMove.prototype.setRotation = function (rotation) {
+    }
+    setRotation(rotation) {
         return this;
-    };
-    return DynamicMove;
-}(Move));
-var AudioPool = /** @class */ (function () {
-    function AudioPool(url, count) {
+    }
+    getVector() {
+        return this.lastVector;
+    }
+}
+class AudioPool {
+    constructor(url, count) {
         this.url = url;
         this.q = [];
-        for (var i = 0; i < count; i++) {
+        for (let i = 0; i < count; i++) {
             this.q.push(new Audio(url));
         }
     }
-    AudioPool.prototype.play = function () {
-        var _this = this;
-        var audio = this.q.pop();
+    play() {
+        let audio = this.q.pop();
         if (!audio) {
             console.log("Audio Pool is not big enough!", this.url);
             return;
         }
         audio.load();
-        audio.addEventListener("ended", function () {
-            _this.q.push(audio);
+        audio.addEventListener("ended", () => {
+            this.q.push(audio);
         });
         audio.play();
-    };
-    return AudioPool;
-}());
-var ShapeEnum = {
-    PLAYER: new Rectangle(20, 35, "#6a7fed", 0),
-    ASTEROID_S: new Circle(ENEMY_RADIUS, "#ff2766", 0),
-    ASTEROID_M: new Circle(2 * ENEMY_RADIUS, "#bb2c5b", 0),
-    ASTEROID_L: new Circle(4 * ENEMY_RADIUS, "#a3163e", 0),
+    }
+}
+const ShapeEnum = {
+    PLAYER: new CharRectangle(20, 35, "#6a7fed", 10, "A"),
+    ASTEROID_S: new Circle(ENEMY_RADIUS, "#ff2766", 10),
+    ASTEROID_M: new Circle(2 * ENEMY_RADIUS, "#bb2c5b", 20),
+    ASTEROID_L: new Circle(4 * ENEMY_RADIUS, "#a3163e", 30),
     SHOT: new Rectangle(5, 5, "#ffffff", 0),
     CLOUD: new Rectangle(150, 150, "#0a1e3a", 0)
 };
-var BoundaryEnum = {
+const BoundaryEnum = {
     NONE: new NoBoundary(),
     SHOT: new Boundary(0, 0, WIDTH, HEIGHT),
     CLOUD: new Boundary(-ShapeEnum.CLOUD.width, -ShapeEnum.CLOUD.height, WIDTH + ShapeEnum.CLOUD.width, HEIGHT + ShapeEnum.CLOUD.height)
 };
-var BountyEnum = {
-    SCORE_ST: function (enemy, shot, type) {
+const BountyEnum = {
+    SCORE_ST: (enemy, shot, type) => {
         if (type == HitTypeEnum.DESTROYED)
             updateStatus(10);
     },
-    HEALTH_ST: function (enemy, shot, type) {
+    HEALTH_ST: (enemy, shot, type) => {
         if (type == HitTypeEnum.DESTROYED)
             updateStatus(0, 1);
     },
-    SCORE_FAST: function (enemy, shot, type) {
+    SCORE_FAST: (enemy, shot, type) => {
         if (type == HitTypeEnum.HIT)
             updateStatus(20);
         if (type == HitTypeEnum.DESTROYED)
             updateStatus(50);
     },
-    SCORE_30: function (enemy, shot, type) {
+    SCORE_30: (enemy, shot, type) => {
         if (type == HitTypeEnum.DESTROYED)
             updateStatus(30);
     }
 };
-var MoveTypeEnum = {
+const MoveTypeEnum = {
     PLAYER: new DynamicMove(DECELERATION_SPEED),
     ENEMY_SIMPLE: new ConstantMove(vector_1.default.from(0, 0.1)),
     PLAYER_SHOT: new ConstantMove(vector_1.default.from(0, -0.5)),
     ENEMY_SHOT: new ConstantMove(vector_1.default.from(0, 0.4)),
     CLOUD: new ConstantMove(vector_1.default.from(0, 0.05))
 };
-var ShotTypeEnum = {
+const ShotTypeEnum = {
     PLAYER: new ShotType(1, ShapeEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.PLAYER_SHOT),
     ENEMY: new ShotType(1, ShapeEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.ENEMY_SHOT)
 };
-var UnitTypeEnum = {
-    PLAYER: new UnitType(3, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
-    ASTEROID_S: new UnitType(1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
-    ASTEROID_M: new UnitType(1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
-    ASTEROID_L: new UnitType(1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+const UnitTypeEnum = {
+    PLAYER: new UnitType(Role.PLAYER, 3, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
+    ASTEROID_S: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+    ASTEROID_M: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+    ASTEROID_L: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
 };
-var EnvironmentTypeEnum = {
+const EnvironmentTypeEnum = {
     CLOUD: new EnvironmentType(ShapeEnum.CLOUD, BoundaryEnum.CLOUD, MoveTypeEnum.CLOUD)
 };
-var AudioPoolEnum = {
+const AudioPoolEnum = {
     PLAYER_SHOT: new AudioPool("audio/player_shot.wav", 5),
 };
-var GameObject = /** @class */ (function () {
-    function GameObject(id, type, x, y, rot, onDestroyed) {
+class GameObject {
+    constructor(id, type, x, y, rot, onDestroyed) {
         this.id = id;
         this.type = type;
         this.x = x;
@@ -287,17 +303,16 @@ var GameObject = /** @class */ (function () {
         this.onDestroyed = onDestroyed;
         this.rotation = 0;
         this.move = null;
+        this.moveVector = vector_1.default.zero();
         this.speed = 0;
         this.move = type.move.copy().setRotation(rot);
     }
-    GameObject.prototype.update = function (elapsedTime, rotation, movement) {
-        if (rotation === void 0) { rotation = 0; }
-        if (movement === void 0) { movement = false; }
-        var move = this.move.move(elapsedTime);
-        var old = vector_1.default.from(this.x, this.y);
-        if (this.type.boundary.isInBounds(this.x + move.x, this.y + move.y, this.type.shape)) {
-            this.x += move.x;
-            this.y += move.y;
+    update(elapsedTime, rotation = 0, movement = false) {
+        this.moveVector = this.move.move(elapsedTime);
+        let old = vector_1.default.from(this.x, this.y);
+        if (this.type.boundary.isInBounds(this.x + this.moveVector.x, this.y + this.moveVector.y, this.type.shape)) {
+            this.x += this.moveVector.x;
+            this.y += this.moveVector.y;
             if (this.type.boundary instanceof NoBoundary) {
                 this.warpToOtherSide(old);
             }
@@ -305,81 +320,69 @@ var GameObject = /** @class */ (function () {
         else if (this.type != UnitTypeEnum.PLAYER) {
             this.onDestroyed(DeathCauseEnum.OUT_OF_BOUNDS);
         }
-    };
-    GameObject.prototype.warpToOtherSide = function (old) {
+    }
+    warpToOtherSide(old) {
         if (this.x > WIDTH && !(old.x > WIDTH))
             this.x = -this.getWidth();
-        else if (this.x + this.getWidth() < 0 && !(old.x + this.getWidth() < 0)) {
-            console.log("Warping 2", old, this.x, this.y);
+        else if (this.x + this.getWidth() < 0 && !(old.x + this.getWidth() < 0))
             this.x = WIDTH;
-        }
         if (this.y > HEIGHT && !(old.y > HEIGHT))
             this.y = -this.getHeight();
-        else if (this.y + this.getHeight() < 0 && !(old.y + this.getHeight() < 0)) {
-            console.log("Warping 4", old, this.x, this.y);
+        else if (this.y + this.getHeight() < 0 && !(old.y + this.getHeight() < 0))
             this.y = HEIGHT;
-        }
-    };
-    GameObject.prototype.isCollidingWith = function (other) {
-        //TODO
-        return false;
-    };
-    GameObject.prototype.render = function (context) {
+    }
+    isCollidingWith(other) {
+        return this.type.shape.isCollidingWith(vector_1.default.from(this.x, this.y), other.type.shape, vector_1.default.from(other.x, other.y));
+    }
+    render(context) {
         context.save();
         context.translate(this.x + 0.5 * this.getWidth(), this.y + 0.5 * player.getHeight());
         context.rotate(vector_1.rad(this.rotation));
         context.translate(-0.5 * this.getWidth(), -0.5 * this.getHeight());
         this.type.shape.render(context);
         context.restore();
-    };
-    //region Helper Methods
-    GameObject.prototype.getWidth = function () {
-        return this.type.shape.getWidth();
-    };
-    GameObject.prototype.getHeight = function () {
-        return this.type.shape.getHeight();
-    };
-    GameObject.prototype.getColor = function () {
-        return this.type.shape.color;
-    };
-    return GameObject;
-}());
-var Unit = /** @class */ (function (_super) {
-    __extends(Unit, _super);
-    function Unit(id, type, x, y, rot, onDestroyed) {
-        var _this = _super.call(this, id, type, x, y, rot, onDestroyed) || this;
-        _this.type = type;
-        _this.moveVector = vector_1.default.zero();
-        _this.onHit = function (other) {
-            if (other instanceof Shot) {
-                if (other.initiator == _this.type)
-                    return;
-                _this.type.bounties.forEach(function (bounty) {
-                    bounty(_this, other, HitTypeEnum.HIT);
-                });
-                _this.lives -= other.type.dmg;
-                updateStatus(0);
-            }
-            else {
-                _this.lives--;
-                updateStatus(0);
-            }
-            if (_this.lives < 1)
-                _this.onDestroyed(DeathCauseEnum.LIVES);
-        };
-        _this.lives = type.lives;
-        return _this;
     }
-    Unit.prototype.isAlive = function () {
+    //region Helper Methods
+    getWidth() {
+        return this.type.shape.getWidth();
+    }
+    getHeight() {
+        return this.type.shape.getHeight();
+    }
+    getColor() {
+        return this.type.shape.color;
+    }
+    getMass() {
+        return this.type.shape.mass;
+    }
+}
+class Unit extends GameObject {
+    constructor(id, type, x, y, rot, onDestroyed) {
+        super(id, type, x, y, rot, onDestroyed);
+        this.type = type;
+        this.onHit = other => {
+            if ( /*this.type.role == Role.ENEMY && other instanceof Unit && other.type.role == Role.ENEMY*/true) {
+                console.log("Collision", this.id, other.id);
+                let collision = collide(this, other);
+                console.log(this.moveVector, other.moveVector, collision.a, collision.b);
+                this.moveVector = collision.a;
+                other.moveVector = collision.b;
+                this.move = new ConstantMove(collision.a);
+                other.move = new ConstantMove(collision.b);
+            }
+            if (this.lives < 1)
+                this.onDestroyed(DeathCauseEnum.LIVES);
+        };
+        this.lives = type.lives;
+    }
+    isAlive() {
         return this.lives > 0;
-    };
-    Unit.prototype.isInBounds = function () {
+    }
+    isInBounds() {
         return this.type.boundary.isInBounds(this.x, this.y, this.type.shape);
-    };
-    Unit.prototype.update = function (elapsedTime, rotation, movement) {
-        if (rotation === void 0) { rotation = 0; }
-        if (movement === void 0) { movement = false; }
-        _super.prototype.update.call(this, elapsedTime, rotation, movement);
+    }
+    update(elapsedTime, rotation = 0, movement = false) {
+        super.update(elapsedTime, rotation, movement);
         if (this.type === UnitTypeEnum.PLAYER) {
             return;
         }
@@ -387,10 +390,10 @@ var Unit = /** @class */ (function (_super) {
             case 1:
                 this.shoot();
         }
-    };
-    Unit.prototype.shoot = function () {
-        var id = shotIdCounter;
-        var shot = new Shot(id, this.type, this.type.shot, this.x + this.getWidth() / 2, this.y + this.getHeight() / 2, this.rotation, function (cause) {
+    }
+    shoot() {
+        let id = shotIdCounter;
+        let shot = new Shot(id, this.type, this.type.shot, this.x + this.getWidth() / 2, this.y + this.getHeight() / 2, this.rotation, (cause) => {
             shots.delete(id);
         });
         this.moveVector.add(vector_1.default.construct(KNOCK_BACK, this.rotation).scale(-1));
@@ -399,24 +402,19 @@ var Unit = /** @class */ (function (_super) {
         shotIdCounter++;
         AudioPoolEnum.PLAYER_SHOT.play();
         return shot;
-    };
-    return Unit;
-}(GameObject));
-var Player = /** @class */ (function (_super) {
-    __extends(Player, _super);
-    function Player(id, type, x, y, rot, onDestroyed) {
-        var _this = _super.call(this, id, type, x, y, rot, onDestroyed) || this;
-        _this.type = type;
-        return _this;
     }
-    Player.prototype.update = function (elapsedTime, rotation, movement) {
-        if (rotation === void 0) { rotation = 0; }
-        if (movement === void 0) { movement = false; }
+}
+class Player extends Unit {
+    constructor(id, type, x, y, rot, onDestroyed) {
+        super(id, type, x, y, rot, onDestroyed);
+        this.type = type;
+    }
+    update(elapsedTime, rotation = 0, movement = false) {
         this.rotation = vector_1.mod(this.rotation + rotation * ROTATION_SPEED * elapsedTime, 360);
-        var oldSpeed = this.speed;
+        let oldSpeed = this.speed;
         this.speed = Math.max(0, this.speed - (DECELERATION_SPEED * elapsedTime / 100));
-        var decSpeed = oldSpeed - this.speed;
-        var accSpeed = 0;
+        let decSpeed = oldSpeed - this.speed;
+        let accSpeed = 0;
         oldSpeed = this.speed;
         if (movement) {
             this.speed = Math.min(MAX_SPEED, this.speed + (ACC_SPEED * elapsedTime / 100));
@@ -427,33 +425,41 @@ var Player = /** @class */ (function (_super) {
             dec: decSpeed,
             acc: accSpeed
         }, this.moveVector);
-        var old = vector_1.default.from(this.x, this.y);
+        let old = vector_1.default.from(this.x, this.y);
         this.x += this.moveVector.x;
         this.y += this.moveVector.y;
         this.warpToOtherSide(old);
-    };
-    return Player;
-}(Unit));
-var Shot = /** @class */ (function (_super) {
-    __extends(Shot, _super);
-    function Shot(id, initiator, type, x, y, rot, onDestroyed) {
-        var _this = _super.call(this, id, type, x, y, rot, onDestroyed) || this;
-        _this.initiator = initiator;
-        _this.type = type;
-        return _this;
     }
-    Shot.prototype.isCollidingWith = function (other) {
-        return _super.prototype.isCollidingWith.call(this, other) && this.initiator !== other.type;
-    };
-    return Shot;
-}(GameObject));
-var Environment = /** @class */ (function (_super) {
-    __extends(Environment, _super);
-    function Environment(id, type, x, y, rot, onDestroyed) {
-        return _super.call(this, id, type, x, y, rot, onDestroyed) || this;
+}
+class Shot extends GameObject {
+    constructor(id, initiator, type, x, y, rot, onDestroyed) {
+        super(id, type, x, y, rot, onDestroyed);
+        this.initiator = initiator;
+        this.type = type;
     }
-    return Environment;
-}(GameObject));
+    isCollidingWith(other) {
+        return super.isCollidingWith(other) && this.initiator !== other.type;
+    }
+    onHit(other) {
+        let o = other;
+        if (this.initiator == o.type)
+            return;
+        o.type.bounties.forEach(bounty => {
+            bounty(o, this, HitTypeEnum.HIT);
+        });
+        o.lives -= this.type.dmg;
+        o.onHit(this);
+        updateStatus(0);
+        this.onDestroyed(DeathCauseEnum.COLLISION);
+    }
+}
+class Environment extends GameObject {
+    constructor(id, type, x, y, rot, onDestroyed) {
+        super(id, type, x, y, rot, onDestroyed);
+    }
+    onHit(other) {
+    }
+}
 //endregion
 var frontCanvas = document.getElementById("canvas");
 var frontContext = frontCanvas.getContext("2d");
@@ -476,7 +482,7 @@ var priorInput = {
     up: false,
     down: false
 };
-var player = new Player(0, UnitTypeEnum.PLAYER, 0, 0, 0, function () {
+var player = new Player(0, UnitTypeEnum.PLAYER, 0, 0, 0, () => {
     endGame();
 });
 player.x = WIDTH / 2 - player.getWidth() / 2;
@@ -488,11 +494,8 @@ var enemyTimeToSpawn = 0;
 var enemyIdCounter = 0;
 var shotIdCounter = 0;
 var environmentIdCounter = 0;
-// @ts-ignore
 var enemies = new Map();
-// @ts-ignore
 var shots = new Map();
-// @ts-ignore
 var environments = new Map();
 var running = true;
 function loop(timestamp) {
@@ -500,7 +503,7 @@ function loop(timestamp) {
         return;
     if (!start)
         start = timestamp;
-    var elapsedTime = timestamp - start;
+    let elapsedTime = timestamp - start;
     start = timestamp;
     createEnemy(elapsedTime);
     createEnvironment();
@@ -559,8 +562,8 @@ function createEnemy(elapsedTime) {
     if (enemyTimeToSpawn > ENEMY_SPAWN_RATE && enemies.size <= ENEMY_LIMIT) {
         enemyTimeToSpawn = 0;
         if (Math.random() * ENEMY_SPAWN_PROBABILITY < 1) {
-            var id_1 = enemyIdCounter;
-            var type = UnitTypeEnum.ASTEROID_M;
+            let id = enemyIdCounter;
+            let type = UnitTypeEnum.ASTEROID_M;
             switch (Math.floor(Math.random() * 10)) {
                 case 0:
                     type = UnitTypeEnum.ASTEROID_L;
@@ -569,12 +572,11 @@ function createEnemy(elapsedTime) {
                     type = UnitTypeEnum.ASTEROID_S;
                     break;
             }
-            enemies.set(id_1, new Unit(id_1, type, Math.random() * (WIDTH - type.shape.getWidth()), -type.shape.getHeight(), Math.random() * 360, function (cause) {
-                var _this = this;
+            enemies.set(id, new Unit(id, type, Math.random() * (WIDTH - type.shape.getWidth()), -type.shape.getHeight(), Math.random() * 360, function (cause) {
                 if (cause == DeathCauseEnum.LIVES) {
-                    this.type.bounties.forEach(function (bounty) { return bounty(_this, null, HitTypeEnum.DESTROYED); });
+                    this.type.bounties.forEach(bounty => bounty(this, null, HitTypeEnum.DESTROYED));
                 }
-                enemies.delete(id_1);
+                enemies.delete(id);
             }));
             enemyIdCounter++;
         }
@@ -583,43 +585,70 @@ function createEnemy(elapsedTime) {
 function createEnvironment() {
     switch (Math.floor(Math.random() * 100)) {
         case 1:
-            var id = environmentIdCounter;
+            let id = environmentIdCounter;
             environments.set(id, new Environment(id, EnvironmentTypeEnum.CLOUD, Math.random() * WIDTH, -EnvironmentTypeEnum.CLOUD.shape.getHeight(), 0, function (cause) {
                 environments.delete(this.id);
             }));
             environmentIdCounter++;
     }
 }
+function collide(a, b) {
+    //http://www.vobarian.com/collisions/2dcollisions2.pdf
+    let un = vector_1.default.from((b.x + 0.5 * b.getWidth()) - (a.x + 0.5 * a.getWidth()), (b.y + 0.5 * b.getHeight()) - (a.y + 0.5 * a.getHeight())).normalize();
+    let ut = vector_1.default.perpendicular(un);
+    let v1n = vector_1.default.dotProduct(un, a.move.getVector());
+    let v1t = vector_1.default.dotProduct(ut, a.move.getVector());
+    let v2n = vector_1.default.dotProduct(un, b.move.getVector());
+    let v2t = vector_1.default.dotProduct(ut, b.move.getVector());
+    let v_1t = v1t;
+    let v_2t = v2t;
+    let v_1n = (v1n * (a.getMass() - b.getMass()) + 2 * b.getMass() * v2n) / (a.getMass() + b.getMass());
+    let v_2n = (v2n * (b.getMass() - a.getMass()) + 2 * a.getMass() * v1n) / (a.getMass() + b.getMass());
+    return {
+        a: vector_1.default.fromOther(un).scale(v_1n).add(vector_1.default.fromOther(ut).scale(v_1t)),
+        b: vector_1.default.fromOther(un).scale(v_2n).add(vector_1.default.fromOther(ut).scale(v_2t))
+    };
+}
 function update(elapsedTime) {
     if (currentInput.space && !priorInput.space) {
         player.shoot();
     }
     player.update(elapsedTime, currentInput.left ? -1 : (currentInput.right ? 1 : 0), currentInput.up);
-    enemies.forEach(function (value) { return value.update(elapsedTime); });
-    shots.forEach(function (value) { return value.update(elapsedTime); });
-    shots.forEach(function (shot) {
-        if (shot.isCollidingWith(player)) {
-            player.onHit(shot);
-            shot.onDestroyed();
-        }
-        enemies.forEach(function (enemy) {
-            if (shot.isCollidingWith(enemy)) {
-                enemy.onHit(shot);
-                shot.onDestroyed(DeathCauseEnum.COLLISION);
-            }
+    enemies.forEach(value => value.update(elapsedTime));
+    shots.forEach(value => value.update(elapsedTime));
+    let collisionPairs = [];
+    shots.forEach(shot => {
+        collisionPairs.push({ a: shot, b: player });
+        enemies.forEach(enemy => {
+            collisionPairs.push({ a: shot, b: enemy });
         });
     });
-    environments.forEach(function (value) { return value.update(elapsedTime); });
+    let enemyList = [];
+    enemies.forEach((value) => enemyList.push(value));
+    for (let i = 0; i < enemyList.length; i++) {
+        collisionPairs.push({ a: enemyList[i], b: player });
+        for (let j = i + 1; j < enemyList.length; j++) {
+            collisionPairs.push({ a: enemyList[i], b: enemyList[j] });
+        }
+    }
+    environments.forEach(value => value.update(elapsedTime));
+    checkCollisions(collisionPairs);
+}
+function checkCollisions(pairs) {
+    pairs.forEach(value => {
+        if (value.a.isCollidingWith(value.b)) {
+            value.a.onHit(value.b);
+        }
+    });
 }
 function render(elapsedTime) {
     backContext.clearRect(0, 0, WIDTH, HEIGHT);
-    environments.forEach(function (value) { return value.render(backContext); });
+    environments.forEach(value => value.render(backContext));
     player.render(backContext);
-    enemies.forEach(function (value) { return value.render(backContext); });
-    shots.forEach(function (value) { return value.render(backContext); });
+    enemies.forEach(value => value.render(backContext));
+    shots.forEach(value => value.render(backContext));
 }
-function updateStatus(scoreDelta, healthDelta) {
-    if (healthDelta === void 0) { healthDelta = 0; }
+function updateStatus(scoreDelta, healthDelta = 0) {
     score += scoreDelta;
     player.lives += healthDelta;
     scoreElement.innerText = "" + score;

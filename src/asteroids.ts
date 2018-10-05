@@ -1,4 +1,4 @@
-import Vector, {mod, rad} from "./vector";
+import Vector, {clamp, mod, rad} from "./vector";
 
 const WIDTH = 800;
 const HEIGHT = 600;
@@ -15,6 +15,9 @@ const ENEMY_LIMIT = 10;
 //region GameObject parts
 type BountyCallback = (enemy: Unit, shot: Shot, type: HitTypeEnum) => any;
 type SpeedStruct = { curr: number, dec: number, acc: number }
+type Endpoint = { value: number, isMax: boolean, object: GameObject }
+type CollisionPair = { a: GameObject, b: Unit }
+type CollisionResult = { a: Vector, b: Vector }
 
 enum DeathCauseEnum {
     OUT_OF_BOUNDS,
@@ -25,6 +28,11 @@ enum DeathCauseEnum {
 enum HitTypeEnum {
     HIT,
     DESTROYED
+}
+
+enum Role {
+    PLAYER,
+    ENEMY
 }
 
 class Boundary {
@@ -55,6 +63,22 @@ abstract class Shape {
     public abstract getHeight(): number;
 
     public abstract render(context: CanvasRenderingContext2D);
+
+    public abstract isCollidingWithRectangle(pos: Vector, other: Rectangle, otherPos: Vector): boolean;
+
+    public abstract isCollidingWithCircle(pos: Vector, other: Circle, otherPos: Vector): boolean;
+
+    public isCollidingWith(pos: Vector, other: Shape, otherPos: Vector): boolean {
+        if (other instanceof Rectangle) {
+            return this.isCollidingWithRectangle(pos, other, otherPos);
+        } else if (other instanceof Circle) {
+            return this.isCollidingWithCircle(pos, other, otherPos);
+        } else {
+            throw new Error("Unknown shape type: " + other);
+        }
+    }
+
+
 }
 
 class Rectangle extends Shape {
@@ -74,6 +98,32 @@ class Rectangle extends Shape {
         context.fillStyle = this.color;
         context.fillRect(0, 0, this.width, this.height);
     }
+
+    public isCollidingWithCircle(pos: Vector, other: Circle, otherPos: Vector): boolean {
+        return other.isCollidingWithRectangle(otherPos, this, pos);
+    }
+
+    public isCollidingWithRectangle(pos: Vector, other: Rectangle, otherPos: Vector): boolean {
+        return pos.x < otherPos.x + other.getWidth() &&
+            pos.x + this.getWidth() > otherPos.x &&
+            pos.y < otherPos.y + other.getHeight() &&
+            pos.y + this.getHeight() > otherPos.y;
+    }
+}
+
+class CharRectangle extends Rectangle {
+    constructor(width: number, height: number, color: string, mass: number, private readonly char: string) {
+        super(width, height, color, mass);
+        this.char = this.char.charAt(0);
+    }
+
+    render(context: CanvasRenderingContext2D): void {
+        super.render(context);
+        context.font = "20px Arial";
+        context.fillStyle = "#ffffff";
+        let txtWidth = context.measureText(this.char).width;
+        context.fillText(this.char, 0.5 * this.width - 0.5 * txtWidth, 0.5 * this.height + 0.5 * 20);
+    }
 }
 
 class Circle extends Shape {
@@ -91,9 +141,28 @@ class Circle extends Shape {
 
     render(context: CanvasRenderingContext2D) {
         context.fillStyle = this.color;
+        context.strokeStyle = "#fff";
+        context.strokeRect(0, 0, 2 * this.radius, 2 * this.radius);
         context.beginPath();
         context.arc(this.radius, this.radius, this.radius, 0, 2 * Math.PI);
         context.fill();
+    }
+
+    public isCollidingWithRectangle(pos: Vector, other: Rectangle, otherPos: Vector): boolean {
+        let closestX = clamp(pos.x, otherPos.x, otherPos.x + other.getWidth());
+        let closestY = clamp(pos.y, otherPos.y, otherPos.y + other.getHeight());
+
+        let distanceX = pos.x - closestX;
+        let distanceY = pos.y - closestY;
+
+        let distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+        return distanceSquared < (this.radius * this.radius);
+    }
+
+    public isCollidingWithCircle(pos: Vector, other: Circle, otherPos: Vector): boolean {
+        return Math.pow((otherPos.x + 0.5 * other.getWidth()) - (pos.x + 0.5 * this.getWidth()), 2)
+            + Math.pow((pos.y + 0.5 * this.getHeight()) - (otherPos.y + 0.5 * other.getHeight()), 2)
+            < Math.pow(this.radius + other.radius, 2);
     }
 }
 
@@ -104,7 +173,7 @@ abstract class GameObjectType {
 }
 
 class UnitType extends GameObjectType {
-    constructor(public lives: number, public shotFreq: number, shape: Shape, boundary: Boundary, move: Move, public shot: ShotType, public bounties: BountyCallback[]) {
+    constructor(public role: Role, public lives: number, public shotFreq: number, shape: Shape, boundary: Boundary, move: Move, public shot: ShotType, public bounties: BountyCallback[]) {
         super(shape, boundary, move)
     }
 }
@@ -133,6 +202,8 @@ abstract class Move {
     abstract copy(): Move;
 
     abstract setRotation(rotation: number): Move;
+
+    abstract getVector(): Vector;
 }
 
 class ConstantMove extends Move {
@@ -153,9 +224,16 @@ class ConstantMove extends Move {
         this.vector.rotate(rotation);
         return this;
     }
+
+
+    getVector(): Vector {
+        return this.vector;
+    }
 }
 
 class DynamicMove extends Move {
+    private lastVector: Vector = Vector.zero();
+
     constructor(private decSpeed: number) {
         super();
     }
@@ -166,6 +244,7 @@ class DynamicMove extends Move {
         if (speed.acc > 0) {
             vector.add(Vector.construct(speed.acc, rotation));
         }
+        this.lastVector = Vector.fromOther(vector).scale(1 / elapsedTime);
         return vector;
     }
 
@@ -176,6 +255,11 @@ class DynamicMove extends Move {
 
     setRotation(rotation: number): Move {
         return this;
+    }
+
+
+    getVector(): Vector {
+        return this.lastVector;
     }
 }
 
@@ -203,10 +287,10 @@ class AudioPool {
 }
 
 const ShapeEnum = {
-    PLAYER: new Rectangle(20, 35, "#6a7fed", 0),
-    ASTEROID_S: new Circle(ENEMY_RADIUS, "#ff2766", 0),
-    ASTEROID_M: new Circle(2 * ENEMY_RADIUS, "#bb2c5b", 0),
-    ASTEROID_L: new Circle(4 * ENEMY_RADIUS, "#a3163e", 0),
+    PLAYER: new CharRectangle(20, 35, "#6a7fed", 10, "A"),
+    ASTEROID_S: new Circle(ENEMY_RADIUS, "#ff2766", 10),
+    ASTEROID_M: new Circle(2 * ENEMY_RADIUS, "#bb2c5b", 20),
+    ASTEROID_L: new Circle(4 * ENEMY_RADIUS, "#a3163e", 30),
     SHOT: new Rectangle(5, 5, "#ffffff", 0),
     CLOUD: new Rectangle(150, 150, "#0a1e3a", 0)
 };
@@ -252,10 +336,10 @@ const ShotTypeEnum = {
 };
 
 const UnitTypeEnum = {
-    PLAYER: new UnitType(3, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
-    ASTEROID_S: new UnitType(1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
-    ASTEROID_M: new UnitType(1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
-    ASTEROID_L: new UnitType(1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+    PLAYER: new UnitType(Role.PLAYER, 3, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
+    ASTEROID_S: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+    ASTEROID_M: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+    ASTEROID_L: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
 };
 
 const EnvironmentTypeEnum = {
@@ -275,6 +359,7 @@ type DestroyedCallback = (cause: DeathCauseEnum) => any;
 abstract class GameObject {
     public rotation: number = 0;
     public move: Move = null;
+    public moveVector: Vector = Vector.zero();
 
     protected speed: number = 0;
 
@@ -283,11 +368,11 @@ abstract class GameObject {
     }
 
     update(elapsedTime: number, rotation: number = 0, movement: boolean = false) {
-        let move = this.move.move(elapsedTime);
+        this.moveVector = this.move.move(elapsedTime);
         let old = Vector.from(this.x, this.y);
-        if (this.type.boundary.isInBounds(this.x + move.x, this.y + move.y, this.type.shape)) {
-            this.x += move.x;
-            this.y += move.y;
+        if (this.type.boundary.isInBounds(this.x + this.moveVector.x, this.y + this.moveVector.y, this.type.shape)) {
+            this.x += this.moveVector.x;
+            this.y += this.moveVector.y;
             if (this.type.boundary instanceof NoBoundary) {
                 this.warpToOtherSide(old);
             }
@@ -299,21 +384,16 @@ abstract class GameObject {
     protected warpToOtherSide(old: Vector) {
         if (this.x > WIDTH && !(old.x > WIDTH))
             this.x = -this.getWidth();
-        else if (this.x + this.getWidth() < 0 && !(old.x + this.getWidth() < 0)) {
-            console.log("Warping 2", old, this.x, this.y);
+        else if (this.x + this.getWidth() < 0 && !(old.x + this.getWidth() < 0))
             this.x = WIDTH;
-        }
         if (this.y > HEIGHT && !(old.y > HEIGHT))
             this.y = -this.getHeight();
-        else if (this.y + this.getHeight() < 0 && !(old.y + this.getHeight() < 0)) {
-            console.log("Warping 4", old, this.x, this.y);
+        else if (this.y + this.getHeight() < 0 && !(old.y + this.getHeight() < 0))
             this.y = HEIGHT;
-        }
     }
 
     isCollidingWith(other: GameObject): boolean {
-        //TODO
-        return false;
+        return this.type.shape.isCollidingWith(Vector.from(this.x, this.y), other.type.shape, Vector.from(other.x, other.y));
     }
 
     public render(context: CanvasRenderingContext2D) {
@@ -324,6 +404,8 @@ abstract class GameObject {
         this.type.shape.render(context);
         context.restore();
     }
+
+    public abstract onHit(other: GameObject);
 
     //region Helper Methods
     public getWidth(): number {
@@ -338,24 +420,24 @@ abstract class GameObject {
         return this.type.shape.color;
     }
 
+    public getMass(): number {
+        return this.type.shape.mass;
+    }
+
     //endregion
 }
 
 class Unit extends GameObject {
-    public moveVector: Vector = Vector.zero();
 
     public onHit: HitCallback = other => {
-        if (other instanceof Shot) {
-            if (other.initiator == this.type)
-                return;
-            this.type.bounties.forEach(bounty => {
-                bounty(this, other, HitTypeEnum.HIT)
-            });
-            this.lives -= other.type.dmg;
-            updateStatus(0);
-        } else {
-            this.lives--;
-            updateStatus(0);
+        if (/*this.type.role == Role.ENEMY && other instanceof Unit && other.type.role == Role.ENEMY*/true) {
+            console.log("Collision", this.id, other.id);
+            let collision = collide(this, other as Unit);
+            console.log(this.moveVector, other.moveVector, collision.a, collision.b);
+            this.moveVector = collision.a;
+            other.moveVector = collision.b;
+            this.move = new ConstantMove(collision.a);
+            other.move = new ConstantMove(collision.b);
         }
         if (this.lives < 1)
             this.onDestroyed(DeathCauseEnum.LIVES);
@@ -437,11 +519,29 @@ class Shot extends GameObject {
     isCollidingWith(other: GameObject): boolean {
         return super.isCollidingWith(other) && this.initiator !== other.type;
     }
+
+
+    onHit(other: GameObject) {
+        let o = other as Unit;
+        if (this.initiator == o.type)
+            return;
+        o.type.bounties.forEach(bounty => {
+            bounty(o, this, HitTypeEnum.HIT)
+        });
+        o.lives -= this.type.dmg;
+        o.onHit(this);
+        updateStatus(0);
+        this.onDestroyed(DeathCauseEnum.COLLISION);
+    }
 }
 
 class Environment extends GameObject {
     constructor(id: number, type: EnvironmentType, x: number, y: number, rot: number, onDestroyed: DestroyedCallback) {
         super(id, type, x, y, rot, onDestroyed);
+    }
+
+
+    onHit(other: GameObject) {
     }
 }
 
@@ -484,11 +584,8 @@ var enemyTimeToSpawn = 0;
 var enemyIdCounter = 0;
 var shotIdCounter = 0;
 var environmentIdCounter = 0;
-// @ts-ignore
 var enemies = new Map<number, Unit>();
-// @ts-ignore
 var shots = new Map<number, Shot>();
-// @ts-ignore
 var environments = new Map<number, Environment>();
 var running: boolean = true;
 
@@ -595,6 +692,26 @@ function createEnvironment() {
     }
 }
 
+function collide(a: Unit, b: Unit): CollisionResult {
+    //http://www.vobarian.com/collisions/2dcollisions2.pdf
+    let un = Vector.from((b.x + 0.5 * b.getWidth()) - (a.x + 0.5 * a.getWidth()), (b.y + 0.5 * b.getHeight()) - (a.y + 0.5 * a.getHeight())).normalize();
+    let ut = Vector.perpendicular(un);
+    let v1n = Vector.dotProduct(un, a.move.getVector());
+    let v1t = Vector.dotProduct(ut, a.move.getVector());
+    let v2n = Vector.dotProduct(un, b.move.getVector());
+    let v2t = Vector.dotProduct(ut, b.move.getVector());
+    let v_1t = v1t;
+    let v_2t = v2t;
+
+    let v_1n = (v1n * (a.getMass() - b.getMass()) + 2 * b.getMass() * v2n) / (a.getMass() + b.getMass());
+    let v_2n = (v2n * (b.getMass() - a.getMass()) + 2 * a.getMass() * v1n) / (a.getMass() + b.getMass());
+
+    return {
+        a: Vector.fromOther(un).scale(v_1n).add(Vector.fromOther(ut).scale(v_1t)),
+        b: Vector.fromOther(un).scale(v_2n).add(Vector.fromOther(ut).scale(v_2t))
+    };
+}
+
 function update(elapsedTime: number) {
     if (currentInput.space && !priorInput.space) {
         player.shoot();
@@ -604,19 +721,34 @@ function update(elapsedTime: number) {
     enemies.forEach(value => value.update(elapsedTime));
     shots.forEach(value => value.update(elapsedTime));
 
+    let collisionPairs: CollisionPair[] = [];
+
     shots.forEach(shot => {
-        if (shot.isCollidingWith(player)) {
-            player.onHit(shot);
-            shot.onDestroyed();
-        }
+        collisionPairs.push({a: shot, b: player});
         enemies.forEach(enemy => {
-            if (shot.isCollidingWith(enemy)) {
-                enemy.onHit(shot);
-                shot.onDestroyed(DeathCauseEnum.COLLISION);
-            }
+            collisionPairs.push({a: shot, b: enemy});
         })
     });
+    let enemyList: Unit[] = [];
+    enemies.forEach((value) => enemyList.push(value));
+    for (let i = 0; i < enemyList.length; i++) {
+        collisionPairs.push({a: enemyList[i], b: player});
+        for (let j = i + 1; j < enemyList.length; j++) {
+            collisionPairs.push({a: enemyList[i], b: enemyList[j]});
+        }
+    }
+
     environments.forEach(value => value.update(elapsedTime));
+
+    checkCollisions(collisionPairs);
+}
+
+function checkCollisions(pairs: CollisionPair[]) {
+    pairs.forEach(value => {
+        if (value.a.isCollidingWith(value.b)) {
+            value.a.onHit(value.b);
+        }
+    });
 }
 
 function render(elapsedTime: number) {

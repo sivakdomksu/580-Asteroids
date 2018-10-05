@@ -65,15 +65,24 @@ export default class Vector {
         return this.magnitude() === 0 ? this : this.scale(1 / this.magnitude());
     }
 
-    // public static mod(vector: Vector): Vector {
-    //     return Vector.fromOther(vector).mod();
-    // }
-    //
-    // public mod(): Vector {
-    //     this.x = mod(this.x, this.modX);
-    //     this.y = mod(this.y, this.modY);
-    //     return this;
-    // }
+    public static perpendicular(vector: Vector): Vector {
+        return Vector.fromOther(vector).perpendicular();
+    }
+
+    public perpendicular(): Vector {
+        let oldX = this.x;
+        this.x = -this.y;
+        this.y = oldX;
+        return this;
+    }
+
+    public static dotProduct(a: Vector, b: Vector): number {
+        return a.x * b.x + a.y * b.y;
+    }
+
+    public dotProduct(other: Vector): number {
+        return Vector.dotProduct(this, other);
+    }
 
 }
 
@@ -83,4 +92,8 @@ export function mod(n: number, m: number): number {
 
 export function rad(n: number): number {
     return n * (Math.PI / 180);
+}
+
+export function clamp(n: number, min: number, max: number): number {
+    return Math.min(Math.max(n, min), max);
 }

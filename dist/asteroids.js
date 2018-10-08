@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const vector_1 = require("./vector");
-const WIDTH = 1366;
-const HEIGHT = 768;
+const WIDTH = 1200;
+const HEIGHT = 650;
 const ROTATION_SPEED = 0.2;
 const ACC_SPEED = 1;
 const DECELERATION_SPEED = 0.4;
@@ -13,6 +13,7 @@ const ENEMY_SPAWN_RATE = 1000;
 const ENEMY_SPAWN_PROBABILITY = 3;
 const ENEMY_SCALING = 2;
 const LVL_COOLDOWN = 3000;
+let score = 0;
 var DeathCauseEnum;
 (function (DeathCauseEnum) {
     DeathCauseEnum[DeathCauseEnum["OUT_OF_BOUNDS"] = 0] = "OUT_OF_BOUNDS";
@@ -118,8 +119,6 @@ class Circle extends Shape {
     }
     render(context) {
         context.fillStyle = this.color;
-        context.strokeStyle = "#fff";
-        context.strokeRect(0, 0, 2 * this.radius, 2 * this.radius);
         context.beginPath();
         context.arc(this.radius, this.radius, this.radius, 0, 2 * Math.PI);
         context.fill();
@@ -234,7 +233,7 @@ class AudioPool {
             console.error("Audio Pool is not big enough!", this.url);
             return;
         }
-        audio.load();
+        audio.currentTime = 0;
         const promise = audio.play();
         if (promise !== undefined) {
             promise.then(value => {
@@ -257,23 +256,17 @@ const BoundaryEnum = {
     CLOUD: new Boundary(-ShapeEnum.CLOUD.width, -ShapeEnum.CLOUD.height, WIDTH + ShapeEnum.CLOUD.width, HEIGHT + ShapeEnum.CLOUD.height)
 };
 const BountyEnum = {
-    SCORE_ST: (enemy, shot, type) => {
+    BOUNTY_S: (enemy, shot, type) => {
         if (type == HitTypeEnum.DESTROYED)
-            updateStatus(10);
+            score += 50;
     },
-    HEALTH_ST: (enemy, shot, type) => {
-        if (type == HitTypeEnum.DESTROYED)
-            updateStatus(0, 1);
-    },
-    SCORE_FAST: (enemy, shot, type) => {
+    BOUNTY_M: (enemy, shot, type) => {
         if (type == HitTypeEnum.HIT)
-            updateStatus(20);
-        if (type == HitTypeEnum.DESTROYED)
-            updateStatus(50);
+            score += 30;
     },
-    SCORE_30: (enemy, shot, type) => {
-        if (type == HitTypeEnum.DESTROYED)
-            updateStatus(30);
+    BOUNTY_L: (enemy, shot, type) => {
+        if (type == HitTypeEnum.HIT)
+            score += 10;
     }
 };
 const MoveTypeEnum = {
@@ -289,9 +282,9 @@ const ShotTypeEnum = {
 };
 const UnitTypeEnum = {
     PLAYER: new UnitType(Role.PLAYER, 3, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
-    ASTEROID_S: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.PLAYER, []),
-    ASTEROID_M: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
-    ASTEROID_L: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, []),
+    ASTEROID_S: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.PLAYER, [BountyEnum.BOUNTY_S]),
+    ASTEROID_M: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_M]),
+    ASTEROID_L: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_L]),
 };
 const EnvironmentTypeEnum = {
     CLOUD: new EnvironmentType(ShapeEnum.CLOUD, BoundaryEnum.CLOUD, MoveTypeEnum.CLOUD)
@@ -376,6 +369,7 @@ class Unit extends GameObject {
             other.moveVector = collision.b;
             this.move = new ConstantMove(collision.a);
             other.move = new ConstantMove(collision.b);
+            this.speed = MAX_SPEED;
         }
         if (this.lives < 1) {
             if (this.type.morph) {
@@ -422,6 +416,8 @@ class Player extends Unit {
         this.type = type;
     }
     onHit(other) {
+        if (other instanceof Unit && other.type.role == Role.ENEMY)
+            this.lives--;
         if (this.lives < 1) {
             this.onDestroyed(this, DeathCauseEnum.LIVES);
         }
@@ -466,7 +462,6 @@ class Shot extends GameObject {
         });
         o.lives -= this.type.dmg;
         o.onHit(this);
-        updateStatus(0);
         this.onDestroyed(this, DeathCauseEnum.COLLISION);
     }
 }
@@ -562,11 +557,11 @@ var priorInput = {
     down: false
 };
 var player = new Player(0, UnitTypeEnum.PLAYER, 0, 0, 0, () => {
+    updateStatus();
     endGame();
 });
 player.x = WIDTH / 2 - player.getWidth() / 2;
 player.y = HEIGHT - player.getHeight();
-var score = 0;
 var scoreElement = document.getElementById("score_text");
 var livesElement = document.getElementById("lives_text");
 var levelElement = document.getElementById("level_text");
@@ -585,7 +580,7 @@ UnitTypeEnum.ASTEROID_L.morph = UnitTypeEnum.ASTEROID_M;
 function loop(timestamp) {
     if (!running)
         return;
-    updateStatus(0, 0, level.getLevel());
+    updateStatus(level.getLevel());
     if (!start)
         start = timestamp;
     let elapsedTime = timestamp - start;
@@ -606,18 +601,22 @@ function pollInput() {
 function handleKeydown(event) {
     switch (event.key) {
         case ' ':
+            event.preventDefault();
             currentInput.space = true;
             break;
         case 'ArrowUp':
         case 'w':
+            event.preventDefault();
             currentInput.up = true;
             break;
         case 'ArrowLeft':
         case 'a':
+            event.preventDefault();
             currentInput.left = true;
             break;
         case 'ArrowRight':
         case 'd':
+            event.preventDefault();
             currentInput.right = true;
             break;
     }
@@ -757,9 +756,7 @@ function render(elapsedTime) {
     enemies.forEach(value => value.render(backContext));
     shots.forEach(value => value.render(backContext));
 }
-function updateStatus(scoreDelta, healthDelta = 0, level = null) {
-    score += scoreDelta;
-    player.lives += healthDelta;
+function updateStatus(level = null) {
     scoreElement.innerText = "" + score;
     livesElement.innerText = "" + player.lives;
     if (level !== null) {
@@ -768,7 +765,8 @@ function updateStatus(scoreDelta, healthDelta = 0, level = null) {
 }
 function endGame() {
     running = false;
-    alert("Game over!");
+    if (confirm("Game over!"))
+        location.reload();
 }
 window.requestAnimationFrame(loop);
 //# sourceMappingURL=asteroids.js.map

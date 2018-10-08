@@ -8,6 +8,12 @@
     background-color: #0a1829;
 }
 
+.main_div {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+}
+
 .text {
     color: white;
 }

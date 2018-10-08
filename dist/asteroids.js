@@ -252,7 +252,7 @@ const ShapeEnum = {
 };
 const BoundaryEnum = {
     NONE: new NoBoundary(),
-    SHOT: new Boundary(0, 0, WIDTH, HEIGHT),
+    SHOT: new Boundary(-ShapeEnum.ASTEROID_L.getWidth(), -ShapeEnum.ASTEROID_L.getHeight(), WIDTH + ShapeEnum.ASTEROID_L.getWidth(), HEIGHT + ShapeEnum.ASTEROID_L.getWidth()),
     CLOUD: new Boundary(-ShapeEnum.CLOUD.width, -ShapeEnum.CLOUD.height, WIDTH + ShapeEnum.CLOUD.width, HEIGHT + ShapeEnum.CLOUD.height)
 };
 const BountyEnum = {
@@ -281,7 +281,7 @@ const ShotTypeEnum = {
     ENEMY: new ShotType(1, ShapeEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.ENEMY_SHOT)
 };
 const UnitTypeEnum = {
-    PLAYER: new UnitType(Role.PLAYER, 3, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
+    PLAYER: new UnitType(Role.PLAYER, 1, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
     ASTEROID_S: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.PLAYER, [BountyEnum.BOUNTY_S]),
     ASTEROID_M: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_M]),
     ASTEROID_L: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_L]),

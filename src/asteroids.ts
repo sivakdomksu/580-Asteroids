@@ -8,7 +8,7 @@ const DECELERATION_SPEED = 0.4;
 const KNOCK_BACK = 0.65;
 const MAX_SPEED = 8;
 const ENEMY_RADIUS = 20;
-const ENEMY_SPAWN_RATE = 1000;
+const ENEMY_SPAWN_RATE = 300;
 const ENEMY_SPAWN_PROBABILITY = 3;
 const ENEMY_SCALING = 2;
 const LVL_COOLDOWN = 3000;
@@ -172,30 +172,30 @@ class Circle extends Shape {
     }
 }
 
-abstract class GameObjectType {
-    protected constructor(public shape: Shape, public boundary: Boundary, public move: Move) {
+abstract class GameObjectType<R extends State> {
+    protected constructor(public states: StateHolder<R>, public boundary: Boundary, public move: Move) {
 
     }
 }
 
-class UnitType extends GameObjectType {
+class UnitType extends GameObjectType<UnitState> {
     public morph: UnitType;
 
-    constructor(public role: Role, public lives: number, public shotFreq: number, shape: Shape, boundary: Boundary, move: Move, public shot: ShotType, public bounties: BountyCallback[]) {
-        super(shape, boundary, move)
+    constructor(public role: Role, public lives: number, public shotFreq: number, states: StateHolder<UnitState>, boundary: Boundary, move: Move, public shot: ShotType, public bounties: BountyCallback[]) {
+        super(states, boundary, move)
     }
 }
 
 
-class ShotType extends GameObjectType {
-    constructor(public dmg: number, shape: Shape, boundary: Boundary, move: Move) {
-        super(shape, boundary, move)
+class ShotType extends GameObjectType<State> {
+    constructor(public dmg: number, states: StateHolder<State>, boundary: Boundary, move: Move) {
+        super(states, boundary, move)
     }
 }
 
-class EnvironmentType extends GameObjectType {
-    constructor(shape: Shape, boundary: Boundary, move: Move) {
-        super(shape, boundary, move)
+class EnvironmentType extends GameObjectType<State> {
+    constructor(states: StateHolder<State>, boundary: Boundary, move: Move) {
+        super(states, boundary, move)
     }
 }
 
@@ -296,8 +296,55 @@ class AudioPool {
     }
 }
 
+class StateHolder<R extends State> {
+    private states: R[] = [];
+
+    constructor(defState: R, ...other: R[]) {
+        console.log("Other", other);
+        this.states.push(defState);
+        other.forEach(value => this.states.push(value));
+        console.log("This", this.states);
+    }
+
+    public getDefault(): R {
+        return this.states[0];
+    }
+
+    public isAllowed(state: R): boolean {
+        for (let value of this.states) {
+            if (value == state)
+                return true;
+        }
+        return false;
+    }
+}
+
+class State {
+    public takeLives = (number) => number;
+
+    constructor(public shape: Shape) {
+
+    }
+
+    public toStateHolder(): StateHolder<State> {
+        return new StateHolder<State>(this);
+    }
+}
+
+class UnitState extends State {
+    constructor(shape: Shape, public takeLives: (number) => number) {
+        super(shape);
+    }
+
+
+    public toStateHolder(): StateHolder<UnitState> {
+        return new StateHolder<UnitState>(this);
+    }
+}
+
 const ShapeEnum = {
     PLAYER: new CharRectangle(20, 35, "#6a7fed", 10, "A"),
+    PLAYER_SHIELD: new CharRectangle(20, 35, "#afb9ff", 10, "A"),
     ASTEROID_S: new Circle(ENEMY_RADIUS, "#ff2766", 10),
     ASTEROID_M: new Circle(2 * ENEMY_RADIUS, "#bb2c5b", 20),
     ASTEROID_L: new Circle(4 * ENEMY_RADIUS, "#a3163e", 30),
@@ -334,20 +381,37 @@ const MoveTypeEnum = {
     CLOUD: new ConstantMove(Vector.from(0, 0.05))
 };
 
+const StateEnum = {
+    PLAYER: new UnitState(ShapeEnum.PLAYER, number => number),
+    PLAYER_SHIELD: new UnitState(ShapeEnum.PLAYER_SHIELD, () => 0)
+};
+
+const StatesEnum = {
+    PLAYER: new StateHolder<UnitState>(
+        StateEnum.PLAYER,
+        StateEnum.PLAYER_SHIELD
+    ),
+    ASTEROID_S: new UnitState(ShapeEnum.ASTEROID_S, number => number).toStateHolder(),
+    ASTEROID_M: new UnitState(ShapeEnum.ASTEROID_M, number => number).toStateHolder(),
+    ASTEROID_L: new UnitState(ShapeEnum.ASTEROID_L, number => number).toStateHolder(),
+    SHOT: new State(ShapeEnum.SHOT).toStateHolder(),
+    CLOUD: new State(ShapeEnum.CLOUD).toStateHolder()
+};
+
 const ShotTypeEnum = {
-    PLAYER: new ShotType(1, ShapeEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.PLAYER_SHOT),
-    ENEMY: new ShotType(1, ShapeEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.ENEMY_SHOT)
+    PLAYER: new ShotType(1, StatesEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.PLAYER_SHOT),
+    ENEMY: new ShotType(1, StatesEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.ENEMY_SHOT)
 };
 
 const UnitTypeEnum = {
-    PLAYER: new UnitType(Role.PLAYER, 1, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
-    ASTEROID_S: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.PLAYER, [BountyEnum.BOUNTY_S]),
-    ASTEROID_M: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_M]),
-    ASTEROID_L: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_L]),
+    PLAYER: new UnitType(Role.PLAYER, 3, 0, StatesEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
+    ASTEROID_S: new UnitType(Role.ENEMY, 1, 0, StatesEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.PLAYER, [BountyEnum.BOUNTY_S]),
+    ASTEROID_M: new UnitType(Role.ENEMY, 1, 0, StatesEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_M]),
+    ASTEROID_L: new UnitType(Role.ENEMY, 1, 0, StatesEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_L]),
 };
 
 const EnvironmentTypeEnum = {
-    CLOUD: new EnvironmentType(ShapeEnum.CLOUD, BoundaryEnum.CLOUD, MoveTypeEnum.CLOUD)
+    CLOUD: new EnvironmentType(StatesEnum.CLOUD, BoundaryEnum.CLOUD, MoveTypeEnum.CLOUD)
 };
 
 const AudioPoolEnum = {
@@ -367,15 +431,17 @@ abstract class GameObject {
     public moveVector: Vector = Vector.zero();
 
     protected speed: number = 0;
+    protected state: State;
 
-    protected constructor(public id: number, public type: GameObjectType, public x: number, public y: number, public rot: number, public onDestroyed: DestroyedCallback) {
+    protected constructor(public id: number, public type: GameObjectType<State>, public x: number, public y: number, public rot: number, public onDestroyed: DestroyedCallback) {
         this.move = type.move.copy().setRotation(rot);
+        this.state = type.states.getDefault();
     }
 
     update(elapsedTime: number, rotation: number = 0, movement: boolean = false) {
         this.moveVector = this.move.move(elapsedTime);
         let old = Vector.from(this.x, this.y);
-        if (this.type.boundary.isInBounds(this.x + this.moveVector.x, this.y + this.moveVector.y, this.type.shape)) {
+        if (this.type.boundary.isInBounds(this.x + this.moveVector.x, this.y + this.moveVector.y, this.state.shape)) {
             this.x += this.moveVector.x;
             this.y += this.moveVector.y;
             if (this.type.boundary instanceof NoBoundary) {
@@ -387,18 +453,18 @@ abstract class GameObject {
     }
 
     protected warpToOtherSide(old: Vector) {
-        if (this.x > WIDTH && !(old.x > WIDTH))
+        if (this.x > WIDTH/* && !(old.x > WIDTH)*/)
             this.x = -this.getWidth();
-        else if (this.x + this.getWidth() < 0 && !(old.x + this.getWidth() < 0))
+        else if (this.x + this.getWidth() < 0/* && !(old.x + this.getWidth() < 0)*/)
             this.x = WIDTH;
-        if (this.y > HEIGHT && !(old.y > HEIGHT))
+        if (this.y > HEIGHT/* && !(old.y > HEIGHT)*/)
             this.y = -this.getHeight();
-        else if (this.y + this.getHeight() < 0 && !(old.y + this.getHeight() < 0))
+        else if (this.y + this.getHeight() < 0/* && !(old.y + this.getHeight() < 0)*/)
             this.y = HEIGHT;
     }
 
     isCollidingWith(other: GameObject): boolean {
-        return this.type.shape.isCollidingWith(Vector.from(this.x, this.y), other.type.shape, Vector.from(other.x, other.y));
+        return this.state.shape.isCollidingWith(Vector.from(this.x, this.y), other.state.shape, Vector.from(other.x, other.y));
     }
 
     public render(context: CanvasRenderingContext2D) {
@@ -406,27 +472,34 @@ abstract class GameObject {
         context.translate(this.x + 0.5 * this.getWidth(), this.y + 0.5 * this.getHeight());
         context.rotate(rad(this.rotation));
         context.translate(-0.5 * this.getWidth(), -0.5 * this.getHeight());
-        this.type.shape.render(context);
+        this.state.shape.render(context);
         context.restore();
     }
 
     public abstract onHit(other: GameObject);
 
+    protected changeState(to: State, cooldown: number) {
+        if (this.type.states.isAllowed(to)) {
+            this.state = to;
+            setTimeout(() => this.state = this.type.states.getDefault(), cooldown);
+        }
+    }
+
     //region Helper Methods
     public getWidth(): number {
-        return this.type.shape.getWidth()
+        return this.state.shape.getWidth()
     }
 
     public getHeight(): number {
-        return this.type.shape.getHeight();
+        return this.state.shape.getHeight();
     }
 
     public getColor(): string {
-        return this.type.shape.color;
+        return this.state.shape.color;
     }
 
     public getMass(): number {
-        return this.type.shape.mass;
+        return this.state.shape.mass;
     }
 
     //endregion
@@ -464,7 +537,7 @@ class Unit extends GameObject {
     }
 
     isInBounds(): boolean {
-        return this.type.boundary.isInBounds(this.x, this.y, this.type.shape);
+        return this.type.boundary.isInBounds(this.x, this.y, this.state.shape);
     }
 
     update(elapsedTime: number, rotation: number = 0, movement: boolean = false): void {
@@ -498,8 +571,11 @@ class Player extends Unit {
     }
 
     public onHit(other: GameObject) {
-        if (other instanceof Unit && other.type.role == Role.ENEMY)
-            this.lives--;
+        if (other instanceof Unit && other.type.role == Role.ENEMY) {
+            this.lives -= this.state.takeLives(1);
+            this.changeState(StateEnum.PLAYER_SHIELD, 2000);
+        }
+
 
         if (this.lives < 1) {
             this.onDestroyed(this, DeathCauseEnum.LIVES);
@@ -768,7 +844,7 @@ function createEnemy(elapsedTime: number) {
                     type = UnitTypeEnum.ASTEROID_S;
                     break;
             }
-            enemies.set(id, new Unit(id, type, Math.random() * (WIDTH - type.shape.getWidth()), -type.shape.getHeight(), Math.random() * 360, (object, cause) => {
+            enemies.set(id, new Unit(id, type, Math.random() * (WIDTH - type.states.getDefault().shape.getWidth()), -type.states.getDefault().shape.getHeight(), Math.random() * 360, (object, cause) => {
                 if (cause == DeathCauseEnum.LIVES) {
                     (object as Unit).type.bounties.forEach(bounty => bounty(object as Unit, null, HitTypeEnum.DESTROYED));
                 }
@@ -783,7 +859,7 @@ function createEnvironment() {
     switch (Math.floor(Math.random() * 100)) {
         case 1:
             let id = environmentIdCounter;
-            environments.set(id, new Environment(id, EnvironmentTypeEnum.CLOUD, Math.random() * WIDTH, -EnvironmentTypeEnum.CLOUD.shape.getHeight(), 0, (object, cause) => {
+            environments.set(id, new Environment(id, EnvironmentTypeEnum.CLOUD, Math.random() * WIDTH, -EnvironmentTypeEnum.CLOUD.states.getDefault().shape.getHeight(), 0, (object, cause) => {
                 environments.delete(object.id);
             }));
             environmentIdCounter++;

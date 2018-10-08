@@ -9,7 +9,7 @@ const DECELERATION_SPEED = 0.4;
 const KNOCK_BACK = 0.65;
 const MAX_SPEED = 8;
 const ENEMY_RADIUS = 20;
-const ENEMY_SPAWN_RATE = 1000;
+const ENEMY_SPAWN_RATE = 300;
 const ENEMY_SPAWN_PROBABILITY = 3;
 const ENEMY_SCALING = 2;
 const LVL_COOLDOWN = 3000;
@@ -141,15 +141,15 @@ class Circle extends Shape {
     }
 }
 class GameObjectType {
-    constructor(shape, boundary, move) {
-        this.shape = shape;
+    constructor(states, boundary, move) {
+        this.states = states;
         this.boundary = boundary;
         this.move = move;
     }
 }
 class UnitType extends GameObjectType {
-    constructor(role, lives, shotFreq, shape, boundary, move, shot, bounties) {
-        super(shape, boundary, move);
+    constructor(role, lives, shotFreq, states, boundary, move, shot, bounties) {
+        super(states, boundary, move);
         this.role = role;
         this.lives = lives;
         this.shotFreq = shotFreq;
@@ -158,14 +158,14 @@ class UnitType extends GameObjectType {
     }
 }
 class ShotType extends GameObjectType {
-    constructor(dmg, shape, boundary, move) {
-        super(shape, boundary, move);
+    constructor(dmg, states, boundary, move) {
+        super(states, boundary, move);
         this.dmg = dmg;
     }
 }
 class EnvironmentType extends GameObjectType {
-    constructor(shape, boundary, move) {
-        super(shape, boundary, move);
+    constructor(states, boundary, move) {
+        super(states, boundary, move);
     }
 }
 class Move {
@@ -242,8 +242,46 @@ class AudioPool {
         }
     }
 }
+class StateHolder {
+    constructor(defState, ...other) {
+        this.states = [];
+        console.log("Other", other);
+        this.states.push(defState);
+        other.forEach(value => this.states.push(value));
+        console.log("This", this.states);
+    }
+    getDefault() {
+        return this.states[0];
+    }
+    isAllowed(state) {
+        for (let value of this.states) {
+            if (value == state)
+                return true;
+        }
+        return false;
+    }
+}
+class State {
+    constructor(shape) {
+        this.shape = shape;
+        this.takeLives = (number) => number;
+    }
+    toStateHolder() {
+        return new StateHolder(this);
+    }
+}
+class UnitState extends State {
+    constructor(shape, takeLives) {
+        super(shape);
+        this.takeLives = takeLives;
+    }
+    toStateHolder() {
+        return new StateHolder(this);
+    }
+}
 const ShapeEnum = {
     PLAYER: new CharRectangle(20, 35, "#6a7fed", 10, "A"),
+    PLAYER_SHIELD: new CharRectangle(20, 35, "#afb9ff", 10, "A"),
     ASTEROID_S: new Circle(ENEMY_RADIUS, "#ff2766", 10),
     ASTEROID_M: new Circle(2 * ENEMY_RADIUS, "#bb2c5b", 20),
     ASTEROID_L: new Circle(4 * ENEMY_RADIUS, "#a3163e", 30),
@@ -276,18 +314,30 @@ const MoveTypeEnum = {
     ENEMY_SHOT: new ConstantMove(vector_1.default.from(0, 0.4)),
     CLOUD: new ConstantMove(vector_1.default.from(0, 0.05))
 };
+const StateEnum = {
+    PLAYER: new UnitState(ShapeEnum.PLAYER, number => number),
+    PLAYER_SHIELD: new UnitState(ShapeEnum.PLAYER_SHIELD, () => 0)
+};
+const StatesEnum = {
+    PLAYER: new StateHolder(StateEnum.PLAYER, StateEnum.PLAYER_SHIELD),
+    ASTEROID_S: new UnitState(ShapeEnum.ASTEROID_S, number => number).toStateHolder(),
+    ASTEROID_M: new UnitState(ShapeEnum.ASTEROID_M, number => number).toStateHolder(),
+    ASTEROID_L: new UnitState(ShapeEnum.ASTEROID_L, number => number).toStateHolder(),
+    SHOT: new State(ShapeEnum.SHOT).toStateHolder(),
+    CLOUD: new State(ShapeEnum.CLOUD).toStateHolder()
+};
 const ShotTypeEnum = {
-    PLAYER: new ShotType(1, ShapeEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.PLAYER_SHOT),
-    ENEMY: new ShotType(1, ShapeEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.ENEMY_SHOT)
+    PLAYER: new ShotType(1, StatesEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.PLAYER_SHOT),
+    ENEMY: new ShotType(1, StatesEnum.SHOT, BoundaryEnum.SHOT, MoveTypeEnum.ENEMY_SHOT)
 };
 const UnitTypeEnum = {
-    PLAYER: new UnitType(Role.PLAYER, 1, 0, ShapeEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
-    ASTEROID_S: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.PLAYER, [BountyEnum.BOUNTY_S]),
-    ASTEROID_M: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_M]),
-    ASTEROID_L: new UnitType(Role.ENEMY, 1, 0, ShapeEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_L]),
+    PLAYER: new UnitType(Role.PLAYER, 3, 0, StatesEnum.PLAYER, BoundaryEnum.NONE, MoveTypeEnum.PLAYER, ShotTypeEnum.PLAYER, []),
+    ASTEROID_S: new UnitType(Role.ENEMY, 1, 0, StatesEnum.ASTEROID_S, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.PLAYER, [BountyEnum.BOUNTY_S]),
+    ASTEROID_M: new UnitType(Role.ENEMY, 1, 0, StatesEnum.ASTEROID_M, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_M]),
+    ASTEROID_L: new UnitType(Role.ENEMY, 1, 0, StatesEnum.ASTEROID_L, BoundaryEnum.NONE, MoveTypeEnum.ENEMY_SIMPLE, ShotTypeEnum.ENEMY, [BountyEnum.BOUNTY_L]),
 };
 const EnvironmentTypeEnum = {
-    CLOUD: new EnvironmentType(ShapeEnum.CLOUD, BoundaryEnum.CLOUD, MoveTypeEnum.CLOUD)
+    CLOUD: new EnvironmentType(StatesEnum.CLOUD, BoundaryEnum.CLOUD, MoveTypeEnum.CLOUD)
 };
 const AudioPoolEnum = {
     PLAYER_SHOT: new AudioPool("audio/Shot.wav", 5),
@@ -306,11 +356,12 @@ class GameObject {
         this.moveVector = vector_1.default.zero();
         this.speed = 0;
         this.move = type.move.copy().setRotation(rot);
+        this.state = type.states.getDefault();
     }
     update(elapsedTime, rotation = 0, movement = false) {
         this.moveVector = this.move.move(elapsedTime);
         let old = vector_1.default.from(this.x, this.y);
-        if (this.type.boundary.isInBounds(this.x + this.moveVector.x, this.y + this.moveVector.y, this.type.shape)) {
+        if (this.type.boundary.isInBounds(this.x + this.moveVector.x, this.y + this.moveVector.y, this.state.shape)) {
             this.x += this.moveVector.x;
             this.y += this.moveVector.y;
             if (this.type.boundary instanceof NoBoundary) {
@@ -322,38 +373,44 @@ class GameObject {
         }
     }
     warpToOtherSide(old) {
-        if (this.x > WIDTH && !(old.x > WIDTH))
+        if (this.x > WIDTH /* && !(old.x > WIDTH)*/)
             this.x = -this.getWidth();
-        else if (this.x + this.getWidth() < 0 && !(old.x + this.getWidth() < 0))
+        else if (this.x + this.getWidth() < 0 /* && !(old.x + this.getWidth() < 0)*/)
             this.x = WIDTH;
-        if (this.y > HEIGHT && !(old.y > HEIGHT))
+        if (this.y > HEIGHT /* && !(old.y > HEIGHT)*/)
             this.y = -this.getHeight();
-        else if (this.y + this.getHeight() < 0 && !(old.y + this.getHeight() < 0))
+        else if (this.y + this.getHeight() < 0 /* && !(old.y + this.getHeight() < 0)*/)
             this.y = HEIGHT;
     }
     isCollidingWith(other) {
-        return this.type.shape.isCollidingWith(vector_1.default.from(this.x, this.y), other.type.shape, vector_1.default.from(other.x, other.y));
+        return this.state.shape.isCollidingWith(vector_1.default.from(this.x, this.y), other.state.shape, vector_1.default.from(other.x, other.y));
     }
     render(context) {
         context.save();
         context.translate(this.x + 0.5 * this.getWidth(), this.y + 0.5 * this.getHeight());
         context.rotate(vector_1.rad(this.rotation));
         context.translate(-0.5 * this.getWidth(), -0.5 * this.getHeight());
-        this.type.shape.render(context);
+        this.state.shape.render(context);
         context.restore();
+    }
+    changeState(to, cooldown) {
+        if (this.type.states.isAllowed(to)) {
+            this.state = to;
+            setTimeout(() => this.state = this.type.states.getDefault(), cooldown);
+        }
     }
     //region Helper Methods
     getWidth() {
-        return this.type.shape.getWidth();
+        return this.state.shape.getWidth();
     }
     getHeight() {
-        return this.type.shape.getHeight();
+        return this.state.shape.getHeight();
     }
     getColor() {
-        return this.type.shape.color;
+        return this.state.shape.color;
     }
     getMass() {
-        return this.type.shape.mass;
+        return this.state.shape.mass;
     }
 }
 class Unit extends GameObject {
@@ -385,7 +442,7 @@ class Unit extends GameObject {
         return this.lives > 0;
     }
     isInBounds() {
-        return this.type.boundary.isInBounds(this.x, this.y, this.type.shape);
+        return this.type.boundary.isInBounds(this.x, this.y, this.state.shape);
     }
     update(elapsedTime, rotation = 0, movement = false) {
         super.update(elapsedTime, rotation, movement);
@@ -416,8 +473,10 @@ class Player extends Unit {
         this.type = type;
     }
     onHit(other) {
-        if (other instanceof Unit && other.type.role == Role.ENEMY)
-            this.lives--;
+        if (other instanceof Unit && other.type.role == Role.ENEMY) {
+            this.lives -= this.state.takeLives(1);
+            this.changeState(StateEnum.PLAYER_SHIELD, 2000);
+        }
         if (this.lives < 1) {
             this.onDestroyed(this, DeathCauseEnum.LIVES);
         }
@@ -657,7 +716,7 @@ function createEnemy(elapsedTime) {
                     type = UnitTypeEnum.ASTEROID_S;
                     break;
             }
-            enemies.set(id, new Unit(id, type, Math.random() * (WIDTH - type.shape.getWidth()), -type.shape.getHeight(), Math.random() * 360, (object, cause) => {
+            enemies.set(id, new Unit(id, type, Math.random() * (WIDTH - type.states.getDefault().shape.getWidth()), -type.states.getDefault().shape.getHeight(), Math.random() * 360, (object, cause) => {
                 if (cause == DeathCauseEnum.LIVES) {
                     object.type.bounties.forEach(bounty => bounty(object, null, HitTypeEnum.DESTROYED));
                 }
@@ -671,7 +730,7 @@ function createEnvironment() {
     switch (Math.floor(Math.random() * 100)) {
         case 1:
             let id = environmentIdCounter;
-            environments.set(id, new Environment(id, EnvironmentTypeEnum.CLOUD, Math.random() * WIDTH, -EnvironmentTypeEnum.CLOUD.shape.getHeight(), 0, (object, cause) => {
+            environments.set(id, new Environment(id, EnvironmentTypeEnum.CLOUD, Math.random() * WIDTH, -EnvironmentTypeEnum.CLOUD.states.getDefault().shape.getHeight(), 0, (object, cause) => {
                 environments.delete(object.id);
             }));
             environmentIdCounter++;
